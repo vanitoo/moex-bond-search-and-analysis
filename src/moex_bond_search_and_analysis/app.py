@@ -1,14 +1,19 @@
 from datetime import datetime
+import re
+import threading
+import time
 from typing import Any
 
 import emoji
 import pandas as pd
-import time
 
 from moex_bond_search_and_analysis.moex import MOEX
 from moex_bond_search_and_analysis.news import google_search, write_to_file
 from moex_bond_search_and_analysis.plugins.excel import ExcelSource
-from moex_bond_search_and_analysis.plugins.html_report import HtmlSearchReport
+from moex_bond_search_and_analysis.plugins.html_report import (
+    HtmlLiveSearchReport,
+    HtmlSearchReport,
+)
 from moex_bond_search_and_analysis.logger import like_print_log
 from moex_bond_search_and_analysis.schemas import SearchByCriteriaConditions
 from moex_bond_search_and_analysis.utils import (
@@ -22,29 +27,105 @@ class App:
         self.log = like_print_log
         self.moex = MOEX(log=self.log)
 
+    @staticmethod
+    def _extract_live_progress(messages: list[str]) -> tuple[int, int, int, int, str]:
+        """Извлекает прогресс из уже существующих сообщений лога, не меняя поисковый скрипт."""
+        processed = 0
+        current = 0
+        current_total = 0
+        found = 0
+        last_message = messages[-1] if messages else "Подготовка к поиску..."
+
+        for message in messages:
+            row_match = re.search(r"Строка\s+(\d+)\s+из\s+(\d+)", message)
+            if row_match:
+                row_number = int(row_match.group(1))
+                row_total = int(row_match.group(2))
+                # При переходе к новой группе предыдущая группа уже полностью обработана.
+                if row_total != current_total and current_total:
+                    processed += current_total
+                current = row_number
+                current_total = row_total
+
+            result_match = re.search(r"Результат №\s*(\d+)", message)
+            if result_match:
+                found = max(found, int(result_match.group(1)))
+
+        processed += current
+        return processed, current, current_total, found, last_message
+
+    def _live_report_worker(
+        self,
+        report: HtmlLiveSearchReport,
+        conditions: SearchByCriteriaConditions,
+        stop_event: threading.Event,
+    ) -> None:
+        while not stop_event.wait(20):
+            messages = list(self.log.messages)
+            processed, current, current_total, found, last_message = self._extract_live_progress(messages)
+            report.write(
+                conditions=conditions,
+                processed=processed,
+                current=current,
+                current_total=current_total,
+                found=found,
+                last_message=last_message,
+            )
+
     @measure_method_duration
     def search_by_criteria(self, search_conditions: SearchByCriteriaConditions | None = None):
         if search_conditions is None:
-            # Если критерии не переданы, используются значения по умолчанию
             self.log.info("Критерии поиска не были переданы, используются значения по умолчанию.")
             search_conditions = SearchByCriteriaConditions()
 
-        moex_search_bonds_result = self.moex.search_bonds(conditions=search_conditions)
-        if moex_search_bonds_result:
-            report_date = datetime.now().strftime('%Y-%m-%d')
+        live_report = HtmlLiveSearchReport(filename="bond_search_live.html")
+        live_report.write(conditions=search_conditions)
+        self.log.info("🌐 Живой отчёт создан: bond_search_live.html")
+
+        stop_event = threading.Event()
+        live_thread = threading.Thread(
+            target=self._live_report_worker,
+            args=(live_report, search_conditions, stop_event),
+            daemon=True,
+        )
+        live_thread.start()
+
+        try:
+            moex_search_bonds_result = self.moex.search_bonds(conditions=search_conditions)
+        finally:
+            stop_event.set()
+            live_thread.join(timeout=2)
+
+        bonds = moex_search_bonds_result or []
+        report_date = datetime.now().strftime("%Y-%m-%d")
+        final_html_filename = f"bond_search_{report_date}.html"
+
+        if bonds:
             output_source = ExcelSource(filename=f"bond_search_{report_date}.xlsx")
             output_source.write_search_by_criteria(
-                moex_search_bonds_result, search_conditions, self.moex.log
+                bonds, search_conditions, self.moex.log
             )
             self.log.info(
                 f"\n💾 Результаты записаны в Excel файл: {output_source.filename}"
             )
 
-            html_report = HtmlSearchReport(filename=f"bond_search_{report_date}.html")
-            html_report.write(moex_search_bonds_result, search_conditions)
-            self.log.info(
-                f"🌐 HTML-отчёт сформирован: {html_report.filename}"
-            )
+        html_report = HtmlSearchReport(filename=final_html_filename)
+        html_report.write(bonds, search_conditions)
+        self.log.info(f"🌐 Финальный HTML-отчёт сформирован: {html_report.filename}")
+
+        messages = list(self.log.messages)
+        processed, current, current_total, found, last_message = self._extract_live_progress(messages)
+        live_report.write(
+            conditions=search_conditions,
+            processed=processed,
+            current=current,
+            current_total=current_total,
+            found=len(bonds) if bonds else found,
+            last_message=last_message,
+            completed=True,
+            final_filename=final_html_filename,
+        )
+        self.log.info("✅ Живой отчёт обновлён: поиск завершён.")
 
     @measure_method_duration
     def search_coupons(self):
@@ -62,7 +143,7 @@ class App:
 
     @measure_method_duration
     def search_news(self):
-        delay_between_calls = 3  # секунды
+        delay_between_calls = 3
         self.log.info("📂 Загружаем данные из Excel...")
         df = pd.read_excel("bonds.xlsx", sheet_name="Исходные данные")
         self.log.info(f"✅ Найдено {len(df)} записей")
@@ -82,7 +163,6 @@ class App:
     def calc_purchase_volume(self, available_money: int = 700_000):
         self.log.info(f"💵 Доступная сумма: {available_money} руб.")
         results = self._calculate_bonds_distribution(available_money)
-        # Вывод итогового распределения средств
         if results:
             total_spent = sum(r["money_spent"] for r in results)
             self.log.info("\n📊 Итоговое распределение:")
@@ -92,14 +172,11 @@ class App:
     def _calculate_bonds_distribution(
         self, available_money: int
     ) -> list[dict[str, Any]]:
-        """
-        # Расчет равномерного распределения средств между облигациями
-        """
+        """Расчет равномерного распределения средств между облигациями."""
         self.log.info("📊 Чтение списка облигаций из файла Excel...")
         df = pd.read_excel("bonds.xlsx", sheet_name="Исходные данные", usecols="A")
         bonds_list = df.iloc[:, 0].tolist()
 
-        # Собираем информацию о всех облигациях
         valid_bonds = []
         for bond in bonds_list:
             self.log.info(f"\n🔍 Получение данных для облигации {bond}...")
@@ -120,7 +197,6 @@ class App:
             self.log.info("❌ Нет доступных облигаций для покупки")
             return []
 
-        # Расчет равного распределения денег
         num_bonds = len(valid_bonds)
         money_per_bond = available_money / num_bonds
         self.log.info(
@@ -128,7 +204,6 @@ class App:
         )
         self.log.info(f"💵 Сумма на каждую облигацию: {money_per_bond:.2f} руб.")
 
-        # Расчет количества каждой облигации
         results = []
         for bond_info in valid_bonds:
             num_bonds = int(money_per_bond // bond_info["total_cost"])
@@ -156,7 +231,6 @@ class App:
             self.log.info(f"   Количество к покупке: {num_bonds} шт.")
             self.log.info(f"   Сумма к расходу: {actual_money:.2f} руб.")
 
-        # Создание нового DataFrame для результатов
         results_df = pd.DataFrame(
             {
                 "Код ценной бумаги": [r["bond"] for r in results],
@@ -171,7 +245,6 @@ class App:
             }
         )
 
-        # Сохраняем результаты в новый файл
         self.log.info("\n📝 Запись результатов в Excel...")
         results_df.to_excel(
             "bonds_calculation purchase volume.xlsx", sheet_name="Расчет", index=False
