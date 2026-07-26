@@ -8,6 +8,7 @@ import time
 from moex_bond_search_and_analysis.moex import MOEX
 from moex_bond_search_and_analysis.news import google_search, write_to_file
 from moex_bond_search_and_analysis.plugins.excel import ExcelSource
+from moex_bond_search_and_analysis.plugins.html_report import HtmlSearchReport
 from moex_bond_search_and_analysis.logger import like_print_log
 from moex_bond_search_and_analysis.schemas import SearchByCriteriaConditions
 from moex_bond_search_and_analysis.utils import (
@@ -27,17 +28,22 @@ class App:
             # Если критерии не переданы, используются значения по умолчанию
             self.log.info("Критерии поиска не были переданы, используются значения по умолчанию.")
             search_conditions = SearchByCriteriaConditions()
-            
+
         moex_search_bonds_result = self.moex.search_bonds(conditions=search_conditions)
         if moex_search_bonds_result:
-            output_source = ExcelSource(
-                filename=f"bond_search_{datetime.now().strftime('%Y-%m-%d')}.xlsx"
-            )
+            report_date = datetime.now().strftime('%Y-%m-%d')
+            output_source = ExcelSource(filename=f"bond_search_{report_date}.xlsx")
             output_source.write_search_by_criteria(
                 moex_search_bonds_result, search_conditions, self.moex.log
             )
             self.log.info(
                 f"\n💾 Результаты записаны в Excel файл: {output_source.filename}"
+            )
+
+            html_report = HtmlSearchReport(filename=f"bond_search_{report_date}.html")
+            html_report.write(moex_search_bonds_result, search_conditions)
+            self.log.info(
+                f"🌐 HTML-отчёт сформирован: {html_report.filename}"
             )
 
     @measure_method_duration
