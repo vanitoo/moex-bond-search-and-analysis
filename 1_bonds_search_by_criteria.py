@@ -1,23 +1,25 @@
 # 🕵️ Поиск ликвидных облигаций Мосбиржи по заданным критериям 🕵️
 #
-# Этот Python скрипт автоматически выполняет поиск облигаций, соответсвующих заданным
+# Этот Python скрипт автоматически выполняет поиск облигаций, соответствующих заданным
 # критериям доходности, цены, дюрации и ликвидности, используя API Московской биржи.
-# Результаты поиска, включающие информацию об облигациях и лог действий, 
+# Результаты поиска, включающие информацию об облигациях и лог действий,
 # записываются в Excel-файл.
 #
-# Установка зависимостей перед использованием: pip install requests openpyxl humanize 
+# Установка зависимостей перед использованием: pip install requests openpyxl humanize
 #
 # Автор: Михаил Шардин https://shardin.name/
 # Дата создания: 14.02.2025
-# Дата изменения: 14.11.2025
-# Версия: 1.3
+# Дата изменения: 27.07.2026
+# Версия: 1.4
 #
 # Актуальная версия скрипта всегда здесь: https://github.com/empenoso/moex-bond-search-and-analysis
 #
 
-import os
+from pathlib import Path
 import sys
-sys.path.append(f"{os.getcwd()}/src")
+
+PROJECT_ROOT = Path(__file__).resolve().parent
+sys.path.append(str(PROJECT_ROOT / "src"))
 
 from cli import start
 from moex_bond_search_and_analysis.schemas import SearchByCriteriaConditions
