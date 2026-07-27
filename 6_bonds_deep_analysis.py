@@ -36,6 +36,9 @@ def evaluate(row: pd.Series) -> dict:
     offer = str(row.get("Ближайшая оферта") or "").strip()
     max_buy = safe_float(row.get("Максимум к покупке, руб."), 0) or 0
     spread = safe_float(row.get("Спред, %"))
+    ofz_spread_bp = safe_float(row.get("Спред к ОФЗ, б.п."))
+    ofz_yield = safe_float(row.get("Доходность сопоставимой ОФЗ, %"))
+    ofz_quality = str(row.get("Качество данных спреда") or "").strip()
     news_files = int(safe_float(row.get("Новостных файлов"), 0) or 0)
     negative_news = str(row.get("Негативные события") or "—")
     positive_news = str(row.get("Позитивные события") or "—")
@@ -54,6 +57,16 @@ def evaluate(row: pd.Series) -> dict:
         positives.append(f"Учтены амортизации: {amortizations}")
     if offer:
         positives.append(f"Ближайшая оферта: {offer}")
+
+    if ofz_spread_bp is None:
+        missing.append("Спред к ОФЗ")
+        completeness -= 1
+    elif 100 <= ofz_spread_bp < 600:
+        positives.append(f"Премия к ОФЗ: {ofz_spread_bp:.0f} б.п.")
+    elif ofz_spread_bp >= 600:
+        risks.append(f"Высокий спред к ОФЗ: {ofz_spread_bp:.0f} б.п.")
+    elif ofz_spread_bp < 100:
+        risks.append(f"Низкая премия к ОФЗ: {ofz_spread_bp:.0f} б.п.")
 
     if news_files == 0:
         missing.append("Новости эмитента")
@@ -79,7 +92,7 @@ def evaluate(row: pd.Series) -> dict:
         liquidity_score = 0
         completeness -= 3
     if spread is not None and spread > 2:
-        risks.append(f"Широкий спред: {spread:.2f}%")
+        risks.append(f"Широкий bid/ask-спред: {spread:.2f}%")
         liquidity_score -= 6
 
     prior_risks = str(row.get("Риски и ограничения") or "")
@@ -109,6 +122,11 @@ def evaluate(row: pd.Series) -> dict:
         "Полное наименование": row.get("Полное наименование"),
         "Код ценной бумаги": row.get("Код ценной бумаги"),
         "Доходность": row.get("Доходность"),
+        "Доходность сопоставимой ОФЗ, %": ofz_yield,
+        "Спред к ОФЗ, б.п.": ofz_spread_bp,
+        "ОФЗ сравнения": row.get("ОФЗ сравнения"),
+        "Оценка премии к ОФЗ": row.get("Оценка премии к ОФЗ"),
+        "Качество данных спреда": ofz_quality,
         "Рыночный балл": market_score,
         "Баллы структуры": max(0, structure_score),
         "Баллы новостей": max(0, news_score),
@@ -146,7 +164,7 @@ def main() -> None:
     html = out / f"bond_deep_analysis_{stamp}.html"
     with pd.ExcelWriter(xlsx, engine="openpyxl") as writer:
         result.to_excel(writer, sheet_name="Глубокий анализ", index=False)
-        pd.DataFrame({"Источник": [source.name], "Описание": ["Включены результаты этапов 2, 3 и 4, переданные через файл этапа 5"]}).to_excel(writer, sheet_name="Методика", index=False)
+        pd.DataFrame({"Источник": [source.name], "Описание": ["Включены результаты cashflow, новостей, ликвидности и спреда к ОФЗ, переданные через файл этапа 5"]}).to_excel(writer, sheet_name="Методика", index=False)
     html.write_text(result.to_html(index=False), encoding="utf-8")
     print(xlsx); print(html)
 
