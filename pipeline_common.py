@@ -19,7 +19,20 @@ def safe_float(value: Any, default: float | None = None) -> float | None:
 
 
 def normalize(value: Any) -> str:
-    return re.sub(r"\s+", " ", str(value or "").strip().lower().replace("ё", "е"))
+    if value is None or pd.isna(value):
+        return ""
+    return re.sub(r"\s+", " ", str(value).strip().lower().replace("ё", "е"))
+
+
+def clean_secid_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """Удаляет служебные строки, пустые SECID и дубли выпусков."""
+    if "Код ценной бумаги" not in df.columns:
+        return df.copy()
+    result = df.copy()
+    result = result.dropna(subset=["Код ценной бумаги"])
+    result["Код ценной бумаги"] = result["Код ценной бумаги"].astype(str).str.strip().str.upper()
+    result = result[result["Код ценной бумаги"].str.fullmatch(r"RU[A-Z0-9]{10}", na=False)]
+    return result.drop_duplicates(subset=["Код ценной бумаги"], keep="first").reset_index(drop=True)
 
 
 def latest(root: Path, pattern: str, required: bool = True) -> Path | None:
@@ -48,7 +61,8 @@ def read_table(path: Path, sheet_name: str | int = 0) -> pd.DataFrame:
 def merge_by_secid(base: pd.DataFrame, extra: pd.DataFrame, prefix: str = "") -> pd.DataFrame:
     if extra.empty or "Код ценной бумаги" not in extra.columns:
         return base
-    extra = extra.drop_duplicates("Код ценной бумаги", keep="last").copy()
+    base = clean_secid_rows(base)
+    extra = clean_secid_rows(extra)
     if prefix:
         extra = extra.rename(columns={c: f"{prefix}{c}" for c in extra.columns if c != "Код ценной бумаги"})
     return base.merge(extra, on="Код ценной бумаги", how="left")

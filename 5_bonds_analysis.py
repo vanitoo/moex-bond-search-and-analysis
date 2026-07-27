@@ -7,7 +7,7 @@ from typing import Any
 
 import pandas as pd
 
-from pipeline_common import latest, merge_by_secid, safe_float
+from pipeline_common import clean_secid_rows, latest, merge_by_secid, safe_float
 
 REQUIRED = {"Полное наименование", "Код ценной бумаги", "Нужна квалификация?", "Цена, %", "Объем сделок с 15 дней, шт.", "Доходность", "Дюрация, месяцев"}
 
@@ -71,8 +71,9 @@ def score_row(row: pd.Series) -> tuple[int, str, list[str], list[str], bool]:
 
 
 def load_stage(path: Path | None, sheet: str) -> pd.DataFrame:
-    if path is None: return pd.DataFrame(columns=["Код ценной бумаги"])
-    return pd.read_excel(path, sheet_name=sheet)
+    if path is None:
+        return pd.DataFrame(columns=["Код ценной бумаги"])
+    return clean_secid_rows(pd.read_excel(path, sheet_name=sheet))
 
 
 def main() -> None:
@@ -85,9 +86,10 @@ def main() -> None:
     args = parser.parse_args()
     root = Path(".")
     source = Path(args.input) if args.input else latest(root, "bond_search_*.xlsx")
-    df = pd.read_excel(source, sheet_name="Результаты поиска")
+    df = clean_secid_rows(pd.read_excel(source, sheet_name="Результаты поиска"))
     missing = REQUIRED.difference(df.columns)
-    if missing: raise ValueError("Нет колонок: " + ", ".join(sorted(missing)))
+    if missing:
+        raise ValueError("Нет колонок: " + ", ".join(sorted(missing)))
 
     cash_path = Path(args.cashflow) if args.cashflow else latest(root, "bond_cashflow_*.xlsx", required=False)
     news_path = Path(args.news) if args.news else latest(root, "bond_news_*.xlsx", required=False)
@@ -116,6 +118,7 @@ def main() -> None:
         df.to_excel(writer, sheet_name="Анализ", index=False)
         pd.DataFrame({"Этап": ["1", "2", "3", "4"], "Файл": [source.name, cash_path.name if cash_path else "нет", news_path.name if news_path else "нет", volume_path.name if volume_path else "нет"]}).to_excel(writer, sheet_name="Источники", index=False)
     html.write_text(df.to_html(index=False), encoding="utf-8")
+    print(f"Обработано уникальных SECID: {len(df)}")
     print(xlsx); print(html)
 
 
