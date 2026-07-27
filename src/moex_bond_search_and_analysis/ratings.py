@@ -189,12 +189,12 @@ def merge_rating_rows(existing: pd.DataFrame, fetched: pd.DataFrame) -> pd.DataF
 def enrich_issuer_identifiers(
     securities: pd.DataFrame,
     session: requests.Session | None = None,
-) -> tuple[pd.DataFrame, list[tuple[str, str]]]:
+) -> tuple[pd.DataFrame, list[str]]:
     result = securities.copy()
     if "ИНН" not in result.columns:
         result["ИНН"] = ""
     client = session or requests.Session()
-    failures: list[tuple[str, str]] = []
+    failures: list[str] = []
 
     for index, row in result.iterrows():
         if _clean_identifier(row.get("ИНН")):
@@ -218,10 +218,10 @@ def enrich_issuer_identifiers(
             columns = block.get("columns", [])
             rows = block.get("data", [])
             if not rows:
-                failures.append((secid, "MOEX не вернул строки по выпуску"))
+                failures.append(f"{secid} (MOEX не вернул строки по выпуску)")
                 continue
             if "secid" not in columns or "emitent_inn" not in columns:
-                failures.append((secid, "в ответе MOEX нет колонок secid/emitent_inn"))
+                failures.append(f"{secid} (в ответе MOEX нет колонок secid/emitent_inn)")
                 continue
             secid_index = columns.index("secid")
             inn_index = columns.index("emitent_inn")
@@ -234,16 +234,16 @@ def enrich_issuer_identifiers(
                 None,
             )
             if match is None:
-                failures.append((secid, "точное совпадение SECID не найдено"))
+                failures.append(f"{secid} (точное совпадение SECID не найдено)")
                 continue
             inn = _clean_identifier(match[inn_index])
             if inn:
                 result.at[index, "ИНН"] = inn
             else:
-                failures.append((secid, "MOEX вернул пустой ИНН"))
+                failures.append(f"{secid} (MOEX вернул пустой ИНН)")
         except requests.RequestException as exc:
-            failures.append((secid, f"сетевая ошибка MOEX: {exc}"))
+            failures.append(f"{secid} (сетевая ошибка MOEX: {exc})")
         except (ValueError, KeyError, IndexError) as exc:
-            failures.append((secid, f"ошибка разбора ответа MOEX: {exc}"))
+            failures.append(f"{secid} (ошибка разбора ответа MOEX: {exc})")
 
     return result, failures
