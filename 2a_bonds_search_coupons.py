@@ -3,17 +3,14 @@
 # Этот Python скрипт автоматически скачивает данные о купонах и выплатах номинала
 # через API Московской биржи для списка облигаций из Excel-файла bonds.xlsx и
 # записывает результат обратно в этот же файл.
-#
-# Установка зависимостей перед использованием: pip install requests openpyxl
-#
-# Автор: Михаил Шардин https://shardin.name/
-# Дата создания: 29.01.2025
-# Версия: 1.1
 
-import os
+from pathlib import Path
 import sys
 
-sys.path.append(f"{os.getcwd()}/src")
+ROOT = Path(__file__).resolve().parent
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
 
 from cli import start
 
