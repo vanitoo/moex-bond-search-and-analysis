@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+import os
 from pathlib import Path
 
 import run_pipeline
@@ -24,3 +26,54 @@ def test_stage_specific_arguments():
     assert run_pipeline.stage_arguments(
         "7_bonds_credit_analysis.py", 0.1, root
     ) == ["--data-dir", str(root / "data")]
+
+
+def test_credit_stage_uses_fresh_ratings_cache(tmp_path: Path):
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    ratings = data_dir / "issuer_ratings.xlsx"
+    ratings.write_bytes(b"not-empty")
+
+    arguments = run_pipeline.stage_arguments(
+        "7_bonds_credit_analysis.py", 0.1, tmp_path
+    )
+
+    assert arguments == [
+        "--data-dir",
+        str(data_dir),
+        "--no-fetch-ratings",
+    ]
+
+
+def test_credit_stage_refresh_flag_ignores_cache(tmp_path: Path):
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    ratings = data_dir / "issuer_ratings.xlsx"
+    ratings.write_bytes(b"not-empty")
+
+    arguments = run_pipeline.stage_arguments(
+        "7_bonds_credit_analysis.py",
+        0.1,
+        tmp_path,
+        refresh_ratings=True,
+    )
+
+    assert arguments == ["--data-dir", str(data_dir)]
+
+
+def test_old_ratings_cache_is_not_reused(tmp_path: Path):
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    ratings = data_dir / "issuer_ratings.xlsx"
+    ratings.write_bytes(b"not-empty")
+    old_time = (datetime.now() - timedelta(hours=48)).timestamp()
+    os.utime(ratings, (old_time, old_time))
+
+    arguments = run_pipeline.stage_arguments(
+        "7_bonds_credit_analysis.py",
+        0.1,
+        tmp_path,
+        ratings_cache_hours=24,
+    )
+
+    assert arguments == ["--data-dir", str(data_dir)]
