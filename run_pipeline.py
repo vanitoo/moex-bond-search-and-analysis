@@ -12,6 +12,7 @@ STAGES = [
     "3a_bonds_news_search.py",
     "3b_bonds_news.py",
     "4b_bonds_purchase_volume.py",
+    "4c_bonds_ofz_spread.py",
     "5_bonds_analysis.py",
     "6_bonds_deep_analysis.py",
     "7_bonds_credit_analysis.py",
