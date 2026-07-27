@@ -4,19 +4,59 @@ import emoji
 import urllib.parse
 
 import feedparser
+import requests
 from moex_bond_search_and_analysis.logger import Logger
 from moex_bond_search_and_analysis.schemas import NewsItem
 
 
+GOOGLE_NEWS_TIMEOUT = 20
+
+
 def google_search(company: str, log: Logger) -> list[NewsItem]:
-    """🔍 Выполняет поиск новостей по компании."""
+    """🔍 Выполняет поиск новостей по компании.
+
+    Пустой корректный RSS означает, что новостей действительно нет.
+    Сетевая ошибка, блокировка или некорректный ответ приводят к исключению,
+    чтобы pipeline не создавал ложные пустые результаты.
+    """
     log.info(emoji.emojize(f"\n🔍 Поиск новостей: {company}"))
     query = urllib.parse.quote(company)
     url = f"https://news.google.com/rss/search?q={query}+when:1y&hl=ru&gl=RU&ceid=RU:ru"
     log.info(f"📌 Сформирован URL запроса: {url}")
 
-    feed: feedparser.FeedParserDict = feedparser.parse(url)
-    # TODO: Надо как то типизировать entry
+    try:
+        response = requests.get(
+            url,
+            timeout=GOOGLE_NEWS_TIMEOUT,
+            headers={"User-Agent": "Mozilla/5.0 bond-news-pipeline/1.0"},
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        raise RuntimeError(
+            "Google News RSS недоступен. Проверьте интернет, DNS или включите прокси/VPN. "
+            f"Запрос: {url}. Ошибка: {exc}"
+        ) from exc
+
+    if not response.content.strip():
+        raise RuntimeError(
+            "Google News RSS вернул пустой HTTP-ответ. Поиск остановлен, чтобы не записывать "
+            "ложные результаты '0 новостей'."
+        )
+
+    feed: feedparser.FeedParserDict = feedparser.parse(response.content)
+    if getattr(feed, "bozo", False):
+        error = getattr(feed, "bozo_exception", "неизвестная ошибка RSS")
+        raise RuntimeError(
+            "Google News вернул некорректный RSS. Возможно, доступ заблокирован или вместо RSS "
+            f"пришла служебная страница. Ошибка разбора: {error}"
+        )
+
+    if not getattr(feed, "feed", None):
+        raise RuntimeError(
+            "Ответ Google News не похож на RSS-ленту. Поиск остановлен, чтобы не считать сбой "
+            "успешным пустым результатом."
+        )
+
     news_items = [
         NewsItem(
             source=entry.source.title if "source" in entry else "Google News",
@@ -27,7 +67,10 @@ def google_search(company: str, log: Logger) -> list[NewsItem]:
         for entry in feed.entries
     ]
 
-    log.info(f"✅ Найдено {len(news_items)} новостей")
+    if news_items:
+        log.info(f"✅ Получен корректный RSS. Найдено новостей: {len(news_items)}")
+    else:
+        log.info("ℹ️ Получен корректный RSS, но по запросу действительно нет новостей")
     return news_items
 
 
