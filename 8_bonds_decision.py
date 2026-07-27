@@ -9,23 +9,27 @@ from typing import Any
 
 import pandas as pd
 
-from pipeline_common import latest, merge_by_secid, safe_float
+from pipeline_common import clean_secid_rows, latest, merge_by_secid, safe_float
 
 RATING_ORDER = ["D", "C", "CC", "CCC", "B-", "B", "B+", "BB-", "BB", "BB+", "BBB-", "BBB", "BBB+", "A-", "A", "A+", "AA-", "AA", "AA+", "AAA"]
 CRITICAL = ("дефолт", "просроч", "банкрот", "не покрывает процент", "отрицательный операционный")
 
 
 def normalize(value: Any) -> str:
-    return re.sub(r"\s+", " ", str(value or "").strip().lower().replace("ё", "е"))
+    if value is None or pd.isna(value):
+        return ""
+    return re.sub(r"\s+", " ", str(value).strip().lower().replace("ё", "е"))
 
 
 def rating(value: Any) -> str:
-    text = str(value or "").upper().replace("(RU)", "").replace("RU", "")
+    if value is None or pd.isna(value):
+        return ""
+    raw = str(value).strip()
+    if not raw or raw.lower() in {"nan", "none", "null", "—", "-"}:
+        return ""
+    text = raw.upper().replace("(RU)", "").replace("RU", "")
     text = re.sub(r"[^A-Z+\-]", "", text)
-    for item in sorted(RATING_ORDER, key=len, reverse=True):
-        if item in text:
-            return item
-    return ""
+    return text if text in RATING_ORDER else ""
 
 
 def rating_at_least(value: str, minimum: str) -> bool:
@@ -115,10 +119,10 @@ def main() -> None:
     args = parser.parse_args()
     root = Path(".")
     source = Path(args.input) if args.input else latest(root, "bond_credit_analysis_*.xlsx")
-    df = pd.read_excel(source, sheet_name="Кредитный анализ")
+    df = clean_secid_rows(pd.read_excel(source, sheet_name="Кредитный анализ"))
     volume_path = Path(args.volume) if args.volume else latest(root, "bond_purchase_volume_*.xlsx", required=False)
     if volume_path:
-        volume = pd.read_excel(volume_path, sheet_name="Объем покупки")
+        volume = clean_secid_rows(pd.read_excel(volume_path, sheet_name="Объем покупки"))
         needed = [c for c in ("Код ценной бумаги", "Максимум к покупке, руб.", "Максимум к покупке, шт.", "Спред, %") if c in volume.columns]
         df = merge_by_secid(df, volume[needed])
     result = pd.DataFrame([decide(row) for _, row in df.iterrows()]).sort_values(["Допущена в портфель", "Финальный балл"], ascending=[False, False])
@@ -134,6 +138,7 @@ def main() -> None:
         pd.DataFrame({"Правило": ["Ликвидность", "Лимит позиции"], "Описание": ["Без подтверждённого доступного объёма покупка запрещена", "Портфель обязан соблюдать и долю стратегии, и максимум этапа 4"]}).to_excel(writer, sheet_name="Правила", index=False)
     html.write_text(result.to_html(index=False), encoding="utf-8")
     json_path.write_text(json.dumps(candidates.to_dict(orient="records"), ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"Обработано уникальных SECID: {len(result)}")
     print(xlsx); print(html); print(json_path)
 
 
