@@ -3,10 +3,13 @@
 # Загружает данные об облигациях из bonds.xlsx, получает названия эмитентов
 # через API Московской биржи, ищет новости и сохраняет их в локальные файлы.
 
-import os
+from pathlib import Path
 import sys
 
-sys.path.append(f"{os.getcwd()}/src")
+ROOT = Path(__file__).resolve().parent
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
 
 from cli import start
 
