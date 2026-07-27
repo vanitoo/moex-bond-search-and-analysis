@@ -4,10 +4,13 @@
 # равномерно распределяет доступную сумму и сохраняет расчет в Excel.
 # Некорректные или неполные котировки пропускаются без остановки всего расчета.
 
-import os
+from pathlib import Path
 import sys
 
-sys.path.append(f"{os.getcwd()}/src")
+ROOT = Path(__file__).resolve().parent
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
 
 from moex_bond_search_and_analysis.app import App
 from moex_bond_search_and_analysis.utils import setup_encoding
@@ -31,7 +34,6 @@ def main() -> None:
     app.moex.get_bond_price = safe_get_bond_price
     app.calc_purchase_volume()
     print("\nМихаил Шардин https://shardin.name/\n")
-    input("Нажмите Enter для выхода...")
 
 
 if __name__ == "__main__":
