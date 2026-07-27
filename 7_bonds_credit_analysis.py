@@ -22,6 +22,17 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import requests
+
+ROOT = Path(__file__).resolve().parent
+SRC = ROOT / "src"
+sys.path.insert(0, str(SRC))
+
+from moex_bond_search_and_analysis.ratings import (
+    enrich_issuer_identifiers,
+    fetch_expert_ra_ratings,
+    merge_rating_rows,
+)
 
 
 RATING_TEMPLATE_COLUMNS = [
@@ -78,6 +89,8 @@ class CreditResult:
 
 
 def normalize(value: Any) -> str:
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
     return re.sub(r"\s+", " ", str(value or "").strip().lower().replace("ё", "е"))
 
 
@@ -93,7 +106,7 @@ def safe_float(value: Any) -> float | None:
 def parse_date(value: Any) -> date | None:
     if value is None or pd.isna(value) or value == "":
         return None
-    parsed = pd.to_datetime(value, errors="coerce")
+    parsed = pd.to_datetime(value, errors="coerce", dayfirst=True)
     return None if pd.isna(parsed) else parsed.date()
 
 
@@ -488,13 +501,40 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Третий слой анализа облигаций")
     parser.add_argument("--input", type=Path, help="Файл bond_deep_analysis_YYYY-MM-DD.xlsx")
     parser.add_argument("--data-dir", type=Path, default=Path("data"), help="Каталог рейтингов и финансов")
+    parser.add_argument(
+        "--no-fetch-ratings",
+        action="store_true",
+        help="Не обновлять рейтинги с официального сайта «Эксперт РА»",
+    )
     args = parser.parse_args()
     try:
         source = args.input or find_latest_deep_file(Path.cwd())
         ratings_path, financials_path = create_templates(args.data_dir)
         ratings = load_optional_table(ratings_path, RATING_TEMPLATE_COLUMNS)
+        if not args.no_fetch_ratings:
+            try:
+                fetched_ratings = fetch_expert_ra_ratings()
+                ratings = merge_rating_rows(ratings, fetched_ratings)
+                ratings.to_excel(ratings_path, index=False)
+                print(
+                    f"Автоматически загружено рейтингов «Эксперт РА»: "
+                    f"{len(fetched_ratings)}. Кэш: {ratings_path}"
+                )
+            except (requests.RequestException, OSError, ValueError) as exc:
+                print(
+                    f"Внимание: автоматическое обновление рейтингов не удалось: {exc}. "
+                    "Используется существующий локальный файл."
+                )
         financials = load_optional_table(financials_path, FINANCIAL_TEMPLATE_COLUMNS)
         deep = load_deep(source)
+        deep, identity_failures = enrich_issuer_identifiers(deep)
+        identified = len(deep) - len(identity_failures)
+        print(f"ИНН эмитентов определён через MOEX ISS: {identified}/{len(deep)}")
+        if identity_failures:
+            print(
+                "Внимание: ИНН не найден для: "
+                + ", ".join(identity_failures)
+            )
         result = build_analysis(deep, ratings, financials)
         stamp = datetime.now().strftime("%Y-%m-%d")
         excel = Path(f"bond_credit_analysis_{stamp}.xlsx")
@@ -503,8 +543,16 @@ def main() -> int:
         write_html(result, report, source)
         print(f"Готово: {excel}")
         print(f"Готово: {report}")
-        if ratings.empty or financials.empty:
-            print("Внимание: шаблоны данных пусты. Заполните data/issuer_ratings.xlsx и data/issuer_financials.xlsx и запустите повторно.")
+        if ratings.empty:
+            print(
+                f"Внимание: рейтинги отсутствуют. Проверьте сеть или заполните "
+                f"{ratings_path} вручную."
+            )
+        if financials.empty:
+            print(
+                f"Внимание: финансовые данные отсутствуют. Заполните "
+                f"{financials_path} и запустите повторно."
+            )
         return 0
     except Exception as exc:
         print(f"Ошибка: {exc}", file=sys.stderr)
