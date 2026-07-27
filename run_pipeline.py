@@ -19,6 +19,36 @@ STAGES = [
 ]
 
 
+def find_latest_run_dir(project_root: Path) -> Path | None:
+    """Находит последнюю папку запуска, в которой есть результат этапа 1."""
+    candidates = [
+        folder
+        for folder in project_root.glob("bond_????_??_??")
+        if folder.is_dir() and any(folder.glob("bond_search_*.xlsx"))
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda folder: folder.stat().st_mtime)
+
+
+def resolve_run_dir(project_root: Path, requested: str | None, from_stage: int) -> Path:
+    if requested:
+        return Path(requested).expanduser().resolve()
+
+    if from_stage == 1:
+        return project_root / f"bond_{datetime.now():%Y_%m_%d}"
+
+    latest = find_latest_run_dir(project_root)
+    if latest is None:
+        raise SystemExit(
+            "Не найдена папка предыдущего запуска с bond_search_*.xlsx. "
+            "Запустите pipeline с этапа 1 или передайте --run-dir."
+        )
+
+    print(f"Продолжаем последний незавершённый запуск: {latest}")
+    return latest
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Полный конвейер анализа облигаций")
     parser.add_argument("--from-stage", type=int, default=1, choices=range(1, 9))
@@ -26,7 +56,11 @@ def main() -> None:
     parser.add_argument("--impact-share", type=float, default=0.10)
     parser.add_argument(
         "--run-dir",
-        help="Папка запуска. По умолчанию bond_YYYY_MM_DD в корне проекта",
+        help=(
+            "Папка запуска. При старте с этапа 1 по умолчанию создаётся "
+            "bond_YYYY_MM_DD. При продолжении выбирается последняя папка "
+            "с результатом этапа 1."
+        ),
     )
     args = parser.parse_args()
 
@@ -34,11 +68,7 @@ def main() -> None:
         raise SystemExit("--from-stage не может быть больше --to-stage")
 
     project_root = Path(__file__).resolve().parent
-    run_dir = (
-        Path(args.run_dir).expanduser().resolve()
-        if args.run_dir
-        else project_root / f"bond_{datetime.now():%Y_%m_%d}"
-    )
+    run_dir = resolve_run_dir(project_root, args.run_dir, args.from_stage)
     run_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Папка текущего запуска: {run_dir}")
