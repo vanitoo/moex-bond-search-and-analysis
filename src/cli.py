@@ -14,9 +14,8 @@ def start(script_number: None | int = None, search_conditions: SearchByCriteriaC
         ))
 
     app = App()
-    
+
     if script_number == 1:
-        # Для первого скрипта передаем условия поиска
         app.search_by_criteria(search_conditions=search_conditions)
     elif script_number == 2:
         app.search_coupons()
@@ -25,10 +24,9 @@ def start(script_number: None | int = None, search_conditions: SearchByCriteriaC
     elif script_number == 4:
         app.calc_purchase_volume()
     else:
-        print("Выбран неверный номер скрипта.")
+        raise ValueError("Выбран неверный номер скрипта.")
 
     print("\nМихаил Шардин https://shardin.name/\n")
-    input("Нажмите Enter для выхода...")
 
 
 if __name__ == "__main__":
