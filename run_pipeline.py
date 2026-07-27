@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 STAGES = [
@@ -20,15 +20,33 @@ STAGES = [
 
 FIRST_STAGE = 1
 LAST_STAGE = len(STAGES)
+DEFAULT_RATINGS_CACHE_HOURS = 24
+
+
+def ratings_cache_is_fresh(path: Path, max_age_hours: float) -> bool:
+    if not path.exists() or path.stat().st_size == 0:
+        return False
+    modified = datetime.fromtimestamp(path.stat().st_mtime)
+    return datetime.now() - modified <= timedelta(hours=max_age_hours)
 
 
 def stage_arguments(
-    script_name: str, impact_share: float, project_root: Path
+    script_name: str,
+    impact_share: float,
+    project_root: Path,
+    refresh_ratings: bool = False,
+    ratings_cache_hours: float = DEFAULT_RATINGS_CACHE_HOURS,
 ) -> list[str]:
     if script_name == "4b_bonds_purchase_volume.py":
         return ["--impact-share", str(impact_share)]
     if script_name == "7_bonds_credit_analysis.py":
-        return ["--data-dir", str(project_root / "data")]
+        arguments = ["--data-dir", str(project_root / "data")]
+        ratings_path = project_root / "data" / "issuer_ratings.xlsx"
+        if not refresh_ratings and ratings_cache_is_fresh(
+            ratings_path, ratings_cache_hours
+        ):
+            arguments.append("--no-fetch-ratings")
+        return arguments
     return []
 
 
@@ -78,6 +96,17 @@ def main() -> None:
     )
     parser.add_argument("--impact-share", type=float, default=0.10)
     parser.add_argument(
+        "--refresh-ratings",
+        action="store_true",
+        help="Принудительно обновить рейтинги «Эксперт РА», игнорируя свежий кэш",
+    )
+    parser.add_argument(
+        "--ratings-cache-hours",
+        type=float,
+        default=DEFAULT_RATINGS_CACHE_HOURS,
+        help="Сколько часов считать issuer_ratings.xlsx свежим",
+    )
+    parser.add_argument(
         "--run-dir",
         help=(
             "Папка запуска. При старте с этапа 1 по умолчанию создаётся "
@@ -89,6 +118,8 @@ def main() -> None:
 
     if args.from_stage > args.to_stage:
         raise SystemExit("--from-stage не может быть больше --to-stage")
+    if args.ratings_cache_hours < 0:
+        raise SystemExit("--ratings-cache-hours не может быть отрицательным")
 
     project_root = Path(__file__).resolve().parent
     run_dir = resolve_run_dir(project_root, args.run_dir, args.from_stage)
@@ -101,7 +132,13 @@ def main() -> None:
         script_name = STAGES[number - 1]
         script_path = project_root / script_name
         command = [sys.executable, str(script_path)]
-        command += stage_arguments(script_name, args.impact_share, project_root)
+        command += stage_arguments(
+            script_name,
+            args.impact_share,
+            project_root,
+            refresh_ratings=args.refresh_ratings,
+            ratings_cache_hours=args.ratings_cache_hours,
+        )
 
         print("\n" + "=" * 72)
         print(f"Этап {number}: {script_name}")
