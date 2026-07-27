@@ -24,6 +24,7 @@ from moex_bond_search_and_analysis.utils import create_news_folder, setup_encodi
 
 
 MOEX_TIMEOUT = 20
+DEFAULT_MAX_FAILURE_SHARE = 0.30
 
 
 def latest_search_file(root: Path) -> Path:
@@ -94,6 +95,16 @@ def fetch_company_names(secids: list[str]) -> list[str]:
     return list(dict.fromkeys(company_names))
 
 
+def clear_news_folder(folder: Path) -> int:
+    """Удаляет старые TXT-файлы, чтобы этап 3b не прочитал устаревшие новости."""
+    removed = 0
+    folder.mkdir(parents=True, exist_ok=True)
+    for old_file in folder.glob("*.txt"):
+        old_file.unlink()
+        removed += 1
+    return removed
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Сбор новостей по найденным облигациям")
     parser.add_argument("--input", type=Path, help="Файл bond_search_YYYY-MM-DD.xlsx")
@@ -103,7 +114,16 @@ def main() -> None:
         default=3.0,
         help="Пауза между поисковыми запросами, секунд",
     )
+    parser.add_argument(
+        "--max-failure-share",
+        type=float,
+        default=DEFAULT_MAX_FAILURE_SHARE,
+        help="Максимальная допустимая доля ошибок Google News от 0 до 1",
+    )
     args = parser.parse_args()
+
+    if not 0 <= args.max_failure_share <= 1:
+        parser.error("--max-failure-share должен быть в диапазоне от 0 до 1")
 
     setup_encoding()
     source = args.input or latest_search_file(Path.cwd())
@@ -116,8 +136,14 @@ def main() -> None:
         raise RuntimeError("Не удалось определить ни одного эмитента. Поиск новостей остановлен.")
     like_print_log.info(f"✅ Найдено уникальных эмитентов: {len(company_names)}")
 
-    news_folder_path = create_news_folder()
+    news_folder = Path(create_news_folder())
+    removed = clear_news_folder(news_folder)
+    if removed:
+        like_print_log.info(f"🧹 Удалено старых файлов новостей: {removed}")
+
     failed_companies: list[tuple[str, str]] = []
+    successful_companies = 0
+
     for index, company in enumerate(company_names, 1):
         like_print_log.info(f"[{index}/{len(company_names)}] Поиск новостей: {company}")
         try:
@@ -129,7 +155,8 @@ def main() -> None:
                 "Эмитент пропущен, обработка продолжается."
             )
         else:
-            write_to_file(news_folder_path, company, news)
+            write_to_file(str(news_folder), company, news)
+            successful_companies += 1
             like_print_log.info(
                 emoji.emojize(f"✍️ Сохранено новостей: {len(news)} для {company}")
             )
@@ -144,7 +171,19 @@ def main() -> None:
         for company, error in failed_companies:
             like_print_log.info(f"   • {company}: {error}")
 
-    like_print_log.info(f"🎉 Обработка завершена. Папка новостей: {news_folder_path}")
+    failure_share = len(failed_companies) / len(company_names)
+    if successful_companies == 0 or failure_share > args.max_failure_share:
+        raise RuntimeError(
+            "Этап новостей нельзя считать выполненным: "
+            f"успешно обработано {successful_companies} из {len(company_names)}, "
+            f"доля ошибок {failure_share:.0%}, допустимо не более "
+            f"{args.max_failure_share:.0%}. Проверьте прокси/VPN и повторите этап 3."
+        )
+
+    like_print_log.info(
+        f"🎉 Обработка завершена. Успешно: {successful_companies}/{len(company_names)}. "
+        f"Папка новостей: {news_folder}"
+    )
 
 
 if __name__ == "__main__":
