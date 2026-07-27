@@ -12,6 +12,7 @@ import requests
 EXPERT_RA_EXPORT_URL = "https://raexpert.ru/ratings/ratings-xlsx-export"
 EXPERT_RA_SOURCE = "АО «Эксперт РА»"
 EXPERT_RA_TIMEOUT = 120
+EXPERT_RA_AUTO_COMMENT = "Автоматическая выгрузка с официального сайта агентства"
 EXPERT_RA_PATHS = [
     "credits",
     "credits_fin",
@@ -97,7 +98,7 @@ def parse_expert_ra_export(content: bytes) -> pd.DataFrame:
                 "Предыдущий рейтинг": "",
                 "Дата предыдущего рейтинга": "",
                 "Источник": url or "https://raexpert.ru/ratings/",
-                "Комментарий": "Автоматическая выгрузка с официального сайта агентства",
+                "Комментарий": EXPERT_RA_AUTO_COMMENT,
             }
         )
 
@@ -136,40 +137,64 @@ def fetch_expert_ra_ratings(
     return parse_expert_ra_export(response.content)
 
 
-def merge_rating_rows(existing: pd.DataFrame, fetched: pd.DataFrame) -> pd.DataFrame:
-    existing = existing.reindex(columns=RATING_COLUMNS)
-    fetched = fetched.reindex(columns=RATING_COLUMNS)
-    if existing.empty:
-        return fetched.reset_index(drop=True)
+def _rating_key(row: pd.Series) -> tuple[str, str, str, str]:
+    secid = _clean_identifier(row.get("Код ценной бумаги")).upper()
+    inn = _clean_identifier(row.get("ИНН"))
+    agency = _clean_identifier(row.get("Агентство")).lower()
+    issuer = _clean_identifier(row.get("Эмитент")).lower()
+    return secid, inn, agency, "" if secid or inn else issuer
 
-    def key(row: pd.Series) -> tuple[str, str, str]:
-        return (
-            _clean_identifier(row.get("Код ценной бумаги")).upper(),
-            _clean_identifier(row.get("ИНН")),
-            _clean_identifier(row.get("Агентство")).lower(),
-        )
 
-    manual_keys = {key(row) for _, row in existing.iterrows()}
-    additions = [
-        row for _, row in fetched.iterrows() if key(row) not in manual_keys
-    ]
-    if not additions:
-        return existing.reset_index(drop=True)
-    return pd.concat(
-        [existing, pd.DataFrame(additions, columns=RATING_COLUMNS)],
-        ignore_index=True,
+def _is_automatic_expert_ra_row(row: pd.Series) -> bool:
+    return (
+        _clean_identifier(row.get("Агентство")).lower()
+        == EXPERT_RA_SOURCE.lower()
+        and _clean_identifier(row.get("Комментарий")) == EXPERT_RA_AUTO_COMMENT
     )
+
+
+def _latest_unique_rows(rows: pd.DataFrame) -> pd.DataFrame:
+    if rows.empty:
+        return rows.reindex(columns=RATING_COLUMNS)
+    result = rows.reindex(columns=RATING_COLUMNS).copy()
+    result["_rating_date"] = pd.to_datetime(
+        result["Дата рейтинга"], errors="coerce", dayfirst=True
+    )
+    result["_key"] = result.apply(_rating_key, axis=1)
+    result = result.sort_values("_rating_date", ascending=False, na_position="last")
+    result = result.drop_duplicates("_key", keep="first")
+    return result.drop(columns=["_rating_date", "_key"]).reset_index(drop=True)
+
+
+def merge_rating_rows(existing: pd.DataFrame, fetched: pd.DataFrame) -> pd.DataFrame:
+    """Обновляет автоматические строки, сохраняя ручные правки с приоритетом."""
+    existing = existing.reindex(columns=RATING_COLUMNS)
+    fetched = _latest_unique_rows(fetched)
+    if existing.empty:
+        return fetched
+
+    automatic_mask = existing.apply(_is_automatic_expert_ra_row, axis=1)
+    manual = existing.loc[~automatic_mask].copy()
+    manual_keys = {_rating_key(row) for _, row in manual.iterrows()}
+
+    fresh_rows = [
+        row for _, row in fetched.iterrows() if _rating_key(row) not in manual_keys
+    ]
+    fresh = pd.DataFrame(fresh_rows, columns=RATING_COLUMNS)
+
+    result = pd.concat([manual, fresh], ignore_index=True)
+    return _latest_unique_rows(result)
 
 
 def enrich_issuer_identifiers(
     securities: pd.DataFrame,
     session: requests.Session | None = None,
-) -> tuple[pd.DataFrame, list[str]]:
+) -> tuple[pd.DataFrame, list[tuple[str, str]]]:
     result = securities.copy()
     if "ИНН" not in result.columns:
         result["ИНН"] = ""
     client = session or requests.Session()
-    failures: list[str] = []
+    failures: list[tuple[str, str]] = []
 
     for index, row in result.iterrows():
         if _clean_identifier(row.get("ИНН")):
@@ -192,8 +217,11 @@ def enrich_issuer_identifiers(
             block = response.json().get("securities", {})
             columns = block.get("columns", [])
             rows = block.get("data", [])
-            if not rows or "secid" not in columns or "emitent_inn" not in columns:
-                failures.append(secid)
+            if not rows:
+                failures.append((secid, "MOEX не вернул строки по выпуску"))
+                continue
+            if "secid" not in columns or "emitent_inn" not in columns:
+                failures.append((secid, "в ответе MOEX нет колонок secid/emitent_inn"))
                 continue
             secid_index = columns.index("secid")
             inn_index = columns.index("emitent_inn")
@@ -205,12 +233,17 @@ def enrich_issuer_identifiers(
                 ),
                 None,
             )
-            inn = "" if match is None else _clean_identifier(match[inn_index])
+            if match is None:
+                failures.append((secid, "точное совпадение SECID не найдено"))
+                continue
+            inn = _clean_identifier(match[inn_index])
             if inn:
                 result.at[index, "ИНН"] = inn
             else:
-                failures.append(secid)
-        except (requests.RequestException, ValueError, KeyError, IndexError):
-            failures.append(secid)
+                failures.append((secid, "MOEX вернул пустой ИНН"))
+        except requests.RequestException as exc:
+            failures.append((secid, f"сетевая ошибка MOEX: {exc}"))
+        except (ValueError, KeyError, IndexError) as exc:
+            failures.append((secid, f"ошибка разбора ответа MOEX: {exc}"))
 
     return result, failures
