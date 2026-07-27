@@ -117,15 +117,32 @@ def main() -> None:
     like_print_log.info(f"✅ Найдено уникальных эмитентов: {len(company_names)}")
 
     news_folder_path = create_news_folder()
+    failed_companies: list[tuple[str, str]] = []
     for index, company in enumerate(company_names, 1):
         like_print_log.info(f"[{index}/{len(company_names)}] Поиск новостей: {company}")
-        news = google_search(company, like_print_log)
-        write_to_file(news_folder_path, company, news)
-        like_print_log.info(
-            emoji.emojize(f"✍️ Сохранено новостей: {len(news)} для {company}")
-        )
+        try:
+            news = google_search(company, like_print_log)
+        except RuntimeError as exc:
+            failed_companies.append((company, str(exc)))
+            like_print_log.info(
+                f"⚠️ Новости для {company} получить не удалось. "
+                "Эмитент пропущен, обработка продолжается."
+            )
+        else:
+            write_to_file(news_folder_path, company, news)
+            like_print_log.info(
+                emoji.emojize(f"✍️ Сохранено новостей: {len(news)} для {company}")
+            )
         if index < len(company_names):
             time.sleep(args.delay)
+
+    if failed_companies:
+        like_print_log.info(
+            f"⚠️ Google News не ответил для {len(failed_companies)} из "
+            f"{len(company_names)} эмитентов:"
+        )
+        for company, error in failed_companies:
+            like_print_log.info(f"   • {company}: {error}")
 
     like_print_log.info(f"🎉 Обработка завершена. Папка новостей: {news_folder_path}")
 

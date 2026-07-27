@@ -1,5 +1,6 @@
 from datetime import datetime
 import os
+import time
 import emoji
 import urllib.parse
 
@@ -10,6 +11,8 @@ from moex_bond_search_and_analysis.schemas import NewsItem
 
 
 GOOGLE_NEWS_TIMEOUT = 20
+GOOGLE_NEWS_ATTEMPTS = 3
+GOOGLE_NEWS_RETRY_DELAY = 2.0
 
 
 def google_search(company: str, log: Logger) -> list[NewsItem]:
@@ -24,18 +27,35 @@ def google_search(company: str, log: Logger) -> list[NewsItem]:
     url = f"https://news.google.com/rss/search?q={query}+when:1y&hl=ru&gl=RU&ceid=RU:ru"
     log.info(f"📌 Сформирован URL запроса: {url}")
 
-    try:
-        response = requests.get(
-            url,
-            timeout=GOOGLE_NEWS_TIMEOUT,
-            headers={"User-Agent": "Mozilla/5.0 bond-news-pipeline/1.0"},
-        )
-        response.raise_for_status()
-    except requests.RequestException as exc:
+    last_error: requests.RequestException | None = None
+    response: requests.Response | None = None
+    for attempt in range(1, GOOGLE_NEWS_ATTEMPTS + 1):
+        try:
+            response = requests.get(
+                url,
+                timeout=GOOGLE_NEWS_TIMEOUT,
+                headers={"User-Agent": "Mozilla/5.0 bond-news-pipeline/1.0"},
+            )
+            response.raise_for_status()
+            break
+        except requests.RequestException as exc:
+            last_error = exc
+            response = None
+            if attempt == GOOGLE_NEWS_ATTEMPTS:
+                break
+            delay = GOOGLE_NEWS_RETRY_DELAY * attempt
+            log.info(
+                f"⚠️ Google News временно недоступен (попытка "
+                f"{attempt}/{GOOGLE_NEWS_ATTEMPTS}): {exc}. "
+                f"Повтор через {delay:g} сек."
+            )
+            time.sleep(delay)
+
+    if response is None:
         raise RuntimeError(
-            "Google News RSS недоступен. Проверьте интернет, DNS или включите прокси/VPN. "
-            f"Запрос: {url}. Ошибка: {exc}"
-        ) from exc
+            f"Google News RSS недоступен после {GOOGLE_NEWS_ATTEMPTS} попыток. "
+            f"Запрос: {url}. Ошибка: {last_error}"
+        ) from last_error
 
     if not response.content.strip():
         raise RuntimeError(

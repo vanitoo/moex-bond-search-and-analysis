@@ -18,6 +18,19 @@ STAGES = [
     "8_bonds_decision.py",
 ]
 
+FIRST_STAGE = 1
+LAST_STAGE = len(STAGES)
+
+
+def stage_arguments(
+    script_name: str, impact_share: float, project_root: Path
+) -> list[str]:
+    if script_name == "4b_bonds_purchase_volume.py":
+        return ["--impact-share", str(impact_share)]
+    if script_name == "7_bonds_credit_analysis.py":
+        return ["--data-dir", str(project_root / "data")]
+    return []
+
 
 def find_latest_run_dir(project_root: Path) -> Path | None:
     """Находит последнюю папку запуска, в которой есть результат этапа 1."""
@@ -51,8 +64,18 @@ def resolve_run_dir(project_root: Path, requested: str | None, from_stage: int) 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Полный конвейер анализа облигаций")
-    parser.add_argument("--from-stage", type=int, default=1, choices=range(1, 9))
-    parser.add_argument("--to-stage", type=int, default=8, choices=range(1, 9))
+    parser.add_argument(
+        "--from-stage",
+        type=int,
+        default=FIRST_STAGE,
+        choices=range(FIRST_STAGE, LAST_STAGE + 1),
+    )
+    parser.add_argument(
+        "--to-stage",
+        type=int,
+        default=LAST_STAGE,
+        choices=range(FIRST_STAGE, LAST_STAGE + 1),
+    )
     parser.add_argument("--impact-share", type=float, default=0.10)
     parser.add_argument(
         "--run-dir",
@@ -78,13 +101,7 @@ def main() -> None:
         script_name = STAGES[number - 1]
         script_path = project_root / script_name
         command = [sys.executable, str(script_path)]
-
-        if number == 4:
-            command += ["--impact-share", str(args.impact_share)]
-        elif number == 7:
-            # Рейтинги и финансовая отчётность общие для всех запусков,
-            # поэтому data остаётся в корне проекта, а не копируется по датам.
-            command += ["--data-dir", str(project_root / "data")]
+        command += stage_arguments(script_name, args.impact_share, project_root)
 
         print("\n" + "=" * 72)
         print(f"Этап {number}: {script_name}")
