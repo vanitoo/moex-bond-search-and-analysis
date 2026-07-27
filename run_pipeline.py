@@ -9,6 +9,7 @@ from pathlib import Path
 STAGES = [
     "1_bonds_search_by_criteria.py",
     "2b_bonds_cashflow.py",
+    "3a_bonds_news_search.py",
     "3b_bonds_news.py",
     "4b_bonds_purchase_volume.py",
     "5_bonds_analysis.py",
