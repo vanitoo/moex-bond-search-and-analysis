@@ -81,6 +81,28 @@ def resolve_run_dir(project_root: Path, requested: str | None, from_stage: int) 
     return latest
 
 
+def run_portfolio_monitor(project_root: Path, run_dir: Path, portfolio_name: str) -> None:
+    command = [
+        sys.executable,
+        str(project_root / "10_portfolio_monitor.py"),
+        "daily",
+        "--name",
+        portfolio_name,
+        "--run-dir",
+        str(run_dir),
+        "--portfolio-dir",
+        str(project_root / "data" / "virtual_portfolios"),
+        "--history-dir",
+        str(project_root / "data" / "portfolio_monitor_history"),
+        "--report-dir",
+        str(project_root / "reports"),
+    ]
+    print("\n" + "=" * 72)
+    print(f"Ежедневный мониторинг портфеля: {portfolio_name}")
+    print("=" * 72)
+    subprocess.run(command, check=True, cwd=project_root)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Полный конвейер анализа облигаций")
     parser.add_argument(
@@ -106,6 +128,15 @@ def main() -> None:
         type=float,
         default=DEFAULT_RATINGS_CACHE_HOURS,
         help="Сколько часов считать issuer_ratings.xlsx свежим",
+    )
+    parser.add_argument(
+        "--portfolio",
+        action="append",
+        default=[],
+        help=(
+            "После pipeline запустить ежедневный мониторинг указанного виртуального "
+            "портфеля. Параметр можно указать несколько раз."
+        ),
     )
     parser.add_argument(
         "--run-dir",
@@ -150,6 +181,9 @@ def main() -> None:
     final_file = run_dir / f"bond_candidates_{datetime.now():%Y-%m-%d}.json"
     print(f"\nКонвейер завершён. Все результаты находятся в: {run_dir}")
     print(f"Финальный вход портфеля: {final_file}")
+
+    for portfolio_name in args.portfolio:
+        run_portfolio_monitor(project_root, run_dir, portfolio_name)
 
 
 if __name__ == "__main__":
