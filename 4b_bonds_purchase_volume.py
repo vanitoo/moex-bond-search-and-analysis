@@ -8,7 +8,7 @@ from urllib.parse import quote
 import pandas as pd
 import requests
 
-from pipeline_common import dated_name, latest, safe_float
+from pipeline_common import clean_secid_rows, dated_name, latest, safe_float
 
 MOEX = "https://iss.moex.com/iss"
 
@@ -50,7 +50,21 @@ def fetch(secid: str, impact_share: float) -> dict:
     turnover_value = safe_float(md.get("VALTODAY"), 0.0) or 0.0
     turnover_qty = safe_float(md.get("VOLTODAY"), 0.0) or 0.0
 
-    market_limit = ask_value * impact_share if ask_value > 0 else turnover_value * impact_share
+    orderbook_limit = ask_value * impact_share if ask_value > 0 else None
+    turnover_limit = turnover_value * impact_share if turnover_value > 0 else None
+    if orderbook_limit is not None and turnover_limit is not None:
+        market_limit = min(orderbook_limit, turnover_limit)
+        limit_source = "Минимум стакана и оборота"
+    elif orderbook_limit is not None:
+        market_limit = orderbook_limit
+        limit_source = "Стакан"
+    elif turnover_limit is not None:
+        market_limit = turnover_limit
+        limit_source = "Только оборот; стакан не получен"
+    else:
+        market_limit = 0.0
+        limit_source = "Нет данных"
+
     max_qty = int(market_limit // unit_cost) if unit_cost > 0 else 0
     if ask_qty > 0:
         max_qty = min(max_qty, max(1, int(ask_qty * impact_share)))
@@ -58,14 +72,22 @@ def fetch(secid: str, impact_share: float) -> dict:
 
     if price_pct <= 0:
         liquidity = "Нет цены"
+        data_quality = "Нет данных"
+    elif ask_value <= 0:
+        liquidity = "Неизвестно"
+        data_quality = "Стакан не получен"
     elif spread_pct is not None and spread_pct > 2:
         liquidity = "Низкая"
+        data_quality = "Полная"
     elif max_amount >= 100_000:
         liquidity = "Высокая"
+        data_quality = "Полная"
     elif max_amount >= 30_000:
         liquidity = "Средняя"
+        data_quality = "Полная"
     else:
         liquidity = "Низкая"
+        data_quality = "Полная"
 
     return {
         "Код ценной бумаги": secid,
@@ -77,6 +99,10 @@ def fetch(secid: str, impact_share: float) -> dict:
         "Спред, %": round(spread_pct, 4) if spread_pct is not None else None,
         "Объем предложения в стакане, шт.": ask_qty,
         "Объем предложения в стакане, руб.": round(ask_value, 2),
+        "Лимит по стакану, руб.": round(orderbook_limit, 2) if orderbook_limit is not None else None,
+        "Лимит по обороту, руб.": round(turnover_limit, 2) if turnover_limit is not None else None,
+        "Источник лимита": limit_source,
+        "Качество данных ликвидности": data_quality,
         "Максимум к покупке, шт.": max_qty,
         "Максимум к покупке, руб.": round(max_amount, 2),
         "Ликвидность покупки": liquidity,
@@ -95,16 +121,16 @@ def main() -> None:
     if not 0 < args.impact_share <= 1:
         raise SystemExit("--impact-share должен быть от 0 до 1")
     source = Path(args.input) if args.input else latest(Path("."), "bond_search_*.xlsx")
-    df = pd.read_excel(source, sheet_name="Результаты поиска")
+    df = clean_secid_rows(pd.read_excel(source, sheet_name="Результаты поиска"))
     result = []
-    for index, secid in enumerate(df["Код ценной бумаги"].dropna().astype(str).unique(), 1):
+    for index, secid in enumerate(df["Код ценной бумаги"].astype(str), 1):
         print(f"[{index}] liquidity {secid}")
         try:
             result.append(fetch(secid, args.impact_share))
         except Exception as exc:
-            result.append({"Код ценной бумаги": secid, "Ошибка ликвидности": str(exc), "Ликвидность покупки": "Ошибка", "Максимум к покупке, руб.": 0})
+            result.append({"Код ценной бумаги": secid, "Ошибка ликвидности": str(exc), "Ликвидность покупки": "Ошибка", "Качество данных ликвидности": "Ошибка", "Максимум к покупке, руб.": 0})
     output = Path(args.output or dated_name("bond_purchase_volume", "xlsx"))
-    pd.DataFrame(result).to_excel(output, sheet_name="Объем покупки", index=False)
+    pd.DataFrame(result).drop_duplicates(subset=["Код ценной бумаги"]).to_excel(output, sheet_name="Объем покупки", index=False)
     print(output)
 
 
