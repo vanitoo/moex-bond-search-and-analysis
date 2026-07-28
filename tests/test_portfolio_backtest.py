@@ -1,12 +1,14 @@
 from datetime import date
 import importlib.util
 from pathlib import Path
+import sys
 
 
 MODULE_PATH = Path(__file__).resolve().parents[1] / "11_portfolio_backtest.py"
 spec = importlib.util.spec_from_file_location("portfolio_backtest", MODULE_PATH)
 module = importlib.util.module_from_spec(spec)
 assert spec and spec.loader
+sys.modules[spec.name] = module
 spec.loader.exec_module(module)
 
 
