@@ -21,7 +21,7 @@ class ModuleSpec:
 
 MODULES = [
     ModuleSpec("market_search", "1_bonds_search_by_criteria.py", "bond_search_*.xlsx", "Результаты поиска"),
-    ModuleSpec("cashflow", "2b_bonds_cashflow.py", "bond_cashflow_*.xlsx", 0),
+    ModuleSpec("cashflow", "2_bonds_cashflow.py", "bond_cashflow_*.xlsx", 0),
     ModuleSpec("news_search", "3a_bonds_news_search.py", None),
     ModuleSpec("news", "3b_bonds_news.py", "bond_news_*.xlsx", "Новости"),
     ModuleSpec("liquidity", "4b_bonds_purchase_volume.py", "bond_purchase_volume_*.xlsx", "Объем покупки"),
