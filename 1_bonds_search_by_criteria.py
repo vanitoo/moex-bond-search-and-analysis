@@ -16,10 +16,10 @@ from moex_bond_search_and_analysis.schemas import SearchByCriteriaConditions
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Контрольный последовательный сканер облигаций MOEX V1")
-    parser.add_argument("--yield-more", type=float, default=15, help="Доходность от, %")
-    parser.add_argument("--yield-less", type=float, default=40, help="Доходность до, %")
-    parser.add_argument("--price-more", type=float, default=70, help="Цена от, % от номинала")
-    parser.add_argument("--price-less", type=float, default=120, help="Цена до, % от номинала")
+    parser.add_argument("--yield-more", type=float, default=15, help="Доходность от, %%")
+    parser.add_argument("--yield-less", type=float, default=40, help="Доходность до, %%")
+    parser.add_argument("--price-more", type=float, default=70, help="Цена от, %% от номинала")
+    parser.add_argument("--price-less", type=float, default=120, help="Цена до, %% от номинала")
     parser.add_argument("--duration-more", type=float, default=3, help="Дюрация от, месяцев")
     parser.add_argument("--duration-less", type=float, default=18, help="Дюрация до, месяцев")
     parser.add_argument("--volume-more", type=float, default=2000, help="Минимальный объём каждого дня, шт.")
