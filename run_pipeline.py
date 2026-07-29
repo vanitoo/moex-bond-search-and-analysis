@@ -11,7 +11,7 @@ from pipeline_architecture import BY_SCRIPT, collect_stage, is_enabled, load_con
 
 STAGES = [
     "1_bonds_search_by_criteria.py",
-    "2b_bonds_cashflow.py",
+    "2_bonds_cashflow.py",
     "3a_bonds_news_search.py",
     "3b_bonds_news.py",
     "4b_bonds_purchase_volume.py",
@@ -21,6 +21,20 @@ STAGES = [
     "7_bonds_credit_analysis.py",
     "8_bonds_decision.py",
 ]
+
+MODULE_DESCRIPTIONS = {
+    "1_bonds_search_by_criteria.py": "Сканирует рынок MOEX и отбирает облигации по заданным критериям доходности, цены, срока и качества данных.",
+    "2_bonds_cashflow.py": "Получает и анализирует будущие купоны, амортизации, оферты и полноту денежных потоков.",
+    "3a_bonds_news_search.py": "Определяет эмитентов найденных выпусков и скачивает свежие новости в локальную папку.",
+    "3b_bonds_news.py": "Анализирует новости, выявляет негативные и позитивные события и формирует новостные стоп-факторы.",
+    "4b_bonds_purchase_volume.py": "Проверяет цену, стакан, оборот и ликвидность, затем рассчитывает допустимый объём покупки.",
+    "4c_bonds_ofz_spread.py": "Сравнивает доходность облигации с сопоставимой ОФЗ и рассчитывает премию за риск.",
+    "5_bonds_analysis.py": "Объединяет результаты доступных модулей и выполняет первичную рыночную оценку облигаций.",
+    "6_bonds_deep_analysis.py": "Выполняет углублённый скоринг с учётом структуры выпуска, новостей, ликвидности и полноты данных.",
+    "7_bonds_credit_analysis.py": "Проверяет рейтинги и финансовые показатели эмитента и оценивает кредитный риск.",
+    "8_bonds_decision.py": "Формирует итоговое решение по каждой облигации на основании включённых модулей и доступных данных.",
+}
+
 FIRST_STAGE = 1
 LAST_STAGE = len(STAGES)
 DEFAULT_RATINGS_CACHE_HOURS = 24
@@ -139,6 +153,7 @@ def main() -> None:
                                    ratings_cache_hours=args.ratings_cache_hours)
         print("\n" + "=" * 72)
         print(f"Этап {number}: {script_name}")
+        print(f"🔴 ЧТО ДЕЛАЕТ МОДУЛЬ: {MODULE_DESCRIPTIONS[script_name]}")
         print(f"Модуль: {spec.key}; режим: {module_config(config, spec.key).get('mode', 'information')}")
         print(f"Рабочая папка: {run_dir}")
         print("=" * 72)
