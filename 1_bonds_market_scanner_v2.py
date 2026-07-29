@@ -263,7 +263,10 @@ def main() -> None:
     enriched: list[dict[str, Any]] = []
     records = candidates.to_dict("records")
     with ThreadPoolExecutor(max_workers=args.workers, thread_name_prefix="moex-v2") as pool:
-        futures = {pool.submit(enrich, row, args, cache_dir): str(row.get("SECID")): row for row in records}
+        futures = {
+            pool.submit(enrich, row, args, cache_dir): str(row.get("SECID"))
+            for row in records
+        }
         total = len(futures)
         for index, future in enumerate(as_completed(futures), 1):
             secid = futures[future]
