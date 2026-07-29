@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime
@@ -40,6 +41,19 @@ RESULT_FILES = {
     "analysis": "bond_analysis_*.xlsx", "deep_analysis": "bond_deep_analysis_*.xlsx",
     "credit": "bond_credit_analysis_*.xlsx", "decision": "bond_decisions_*.xlsx",
 }
+
+
+def project_python() -> Path:
+    """Возвращает Python проекта, предпочитая локальное виртуальное окружение."""
+    candidates = [
+        PROJECT_ROOT / ".venv" / "Scripts" / "python.exe",
+        PROJECT_ROOT / "venv" / "Scripts" / "python.exe",
+        PROJECT_ROOT / "env" / "Scripts" / "python.exe",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return Path(sys.executable)
 
 
 def load_json(path: Path, default: Any) -> Any:
@@ -87,12 +101,30 @@ def config_editor() -> dict[str, Any]:
 
 def execute_modules(run_dir: Path, modules: list[str], config_path: Path, refresh_ratings: bool) -> tuple[int, str]:
     run_dir.mkdir(parents=True, exist_ok=True)
-    command = [sys.executable, str(PROJECT_ROOT / "run_pipeline.py"), "--run-dir", str(run_dir), "--config", str(config_path)]
+    python_executable = project_python()
+    command = [str(python_executable), str(PROJECT_ROOT / "run_pipeline.py"), "--run-dir", str(run_dir), "--config", str(config_path)]
     for key in modules: command += ["--only-module", key]
     if refresh_ratings: command.append("--refresh-ratings")
-    process = subprocess.Popen(command, cwd=PROJECT_ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                               text=True, encoding="utf-8", errors="replace", bufsize=1)
+
+    child_env = os.environ.copy()
+    child_env["PYTHONUTF8"] = "1"
+    child_env["PYTHONIOENCODING"] = "utf-8"
+    child_env["PYTHONUNBUFFERED"] = "1"
+
+    process = subprocess.Popen(
+        command,
+        cwd=PROJECT_ROOT,
+        env=child_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        bufsize=1,
+    )
     placeholder = st.empty(); lines: list[str] = []; assert process.stdout is not None
+    lines.append(f"Python pipeline: {python_executable}")
+    placeholder.code("\n".join(lines), language="text")
     for line in process.stdout:
         lines.append(line.rstrip()); placeholder.code("\n".join(lines[-40:]), language="text")
     return process.wait(), "\n".join(lines)
@@ -113,6 +145,7 @@ def run_with_ui(run_dir: Path, selected: list[str], config: dict[str, Any], refr
 def render_start_today(config: dict[str, Any]) -> None:
     st.subheader("Анализ на сегодня ещё не запускался")
     st.info("Создам папку сегодняшнего дня и запущу включённые модули. Финальное решение можно оставить включённым при любой конфигурации.")
+    st.caption(f"Pipeline будет запущен через: {project_python()}")
     enabled = [key for key in MODULE_KEYS if config.get("modules", {}).get(key, {}).get("enabled", True)]
     st.write("Будут запущены модули:"); st.write(" → ".join(LABELS[key] for key in enabled))
     refresh = st.checkbox("Принудительно обновить рейтинги", value=False, key="start_refresh")
@@ -165,6 +198,7 @@ def render_bonds(run_dir: Path) -> None:
 def render_rerun(run_dir: Path, config: dict[str, Any]) -> None:
     st.subheader("Обновить только часть анализа")
     st.info("Финальное решение можно пересчитать отдельно. Оно использует только включённые модули и доступные результаты.")
+    st.caption(f"Pipeline будет запущен через: {project_python()}")
     selected = st.multiselect("Какие модули обновить", MODULE_KEYS, format_func=lambda key: LABELS[key], default=[])
     refresh = st.checkbox("Принудительно обновить рейтинги", value=False, key="rerun_refresh")
     enabled = {key for key in MODULE_KEYS if config.get("modules", {}).get(key, {}).get("enabled", True)}
