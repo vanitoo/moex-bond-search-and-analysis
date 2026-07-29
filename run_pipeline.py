@@ -23,7 +23,8 @@ STAGES = [
 ]
 
 MODULE_DESCRIPTIONS = {
-    "1_bonds_search_by_criteria.py": "Сканирует рынок MOEX и отбирает облигации по заданным критериям доходности, цены, срока и качества данных.",
+    "1_bonds_search_by_criteria.py": "V1: старый последовательный сканер рынка MOEX. Оставлен как контрольный и резервный вариант.",
+    "1_bonds_market_scanner_v2.py": "V2: пакетная загрузка рынка, локальная фильтрация, дисковый кэш и ограниченный параллелизм.",
     "2_bonds_cashflow.py": "Получает и анализирует будущие купоны, амортизации, оферты и полноту денежных потоков.",
     "3a_bonds_news_search.py": "Определяет эмитентов найденных выпусков и скачивает свежие новости в локальную папку.",
     "3b_bonds_news.py": "Анализирует новости, выявляет негативные и позитивные события и формирует новостные стоп-факторы.",
@@ -40,6 +41,19 @@ LAST_STAGE = len(STAGES)
 DEFAULT_RATINGS_CACHE_HOURS = 24
 
 
+def selected_market_script(config: dict) -> str:
+    version = str(module_config(config, "market_search").get("version", "v1")).strip().lower()
+    if version not in {"v1", "v2"}:
+        raise SystemExit("market_search.version должен быть v1 или v2")
+    return "1_bonds_market_scanner_v2.py" if version == "v2" else "1_bonds_search_by_criteria.py"
+
+
+def actual_script(script_name: str, config: dict) -> str:
+    if script_name == "1_bonds_search_by_criteria.py":
+        return selected_market_script(config)
+    return script_name
+
+
 def ratings_cache_is_fresh(path: Path, max_age_hours: float) -> bool:
     if not path.exists() or path.stat().st_size == 0:
         return False
@@ -52,6 +66,11 @@ def stage_arguments(script_name: str, impact_share: float, project_root: Path, c
                     ratings_cache_hours: float = DEFAULT_RATINGS_CACHE_HOURS) -> list[str]:
     spec = BY_SCRIPT[script_name]
     settings = module_config(config, spec.key)
+    if script_name == "1_bonds_market_scanner_v2.py":
+        return [
+            "--workers", str(settings.get("workers", 5)),
+            "--cache-hours", str(settings.get("cache_hours", 12)),
+        ]
     if script_name == "4b_bonds_purchase_volume.py":
         return ["--impact-share", str(settings.get("impact_share", impact_share))]
     if script_name == "7_bonds_credit_analysis.py":
@@ -137,11 +156,13 @@ def main() -> None:
 
     print(f"Папка текущего запуска: {run_dir}")
     print(f"Стратегия: {config.get('strategy')}")
+    print(f"Сканер рынка: {module_config(config, 'market_search').get('version', 'v1').upper()}")
     if args.only_module:
         print("Точечный запуск модулей: " + ", ".join(args.only_module))
 
     for number in numbers:
-        script_name = STAGES[number - 1]
+        configured_name = STAGES[number - 1]
+        script_name = actual_script(configured_name, config)
         spec = BY_SCRIPT[script_name]
         if not is_enabled(config, spec.key):
             print(f"\nЭтап {number}: {script_name} — ОТКЛЮЧЁН конфигурацией")
