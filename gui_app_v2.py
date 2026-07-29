@@ -16,7 +16,7 @@ DEFAULT_CONFIG = PROJECT_ROOT / "configs" / "balanced.json"
 TODAY_RUN = PROJECT_ROOT / f"bond_{datetime.now():%Y_%m_%d}"
 
 MODULES = [
-    ("market_search", "1. Поиск облигаций", "Выберите V1 или экспериментальный V2"),
+    ("market_search", "1. Поиск облигаций", "Общие критерии для V1 и V2; выбирается только способ сканирования"),
     ("cashflow", "2. Денежные потоки", "Купоны, оферты и погашения"),
     ("news_search", "3а. Поиск новостей", "Скачивание и обновление новостей"),
     ("news", "3б. Анализ новостей", "Риски и стоп-факторы"),
@@ -44,7 +44,6 @@ RESULT_FILES = {
 
 
 def project_python() -> Path:
-    """Возвращает Python проекта, предпочитая локальное виртуальное окружение."""
     candidates = [
         PROJECT_ROOT / ".venv" / "Scripts" / "python.exe",
         PROJECT_ROOT / "venv" / "Scripts" / "python.exe",
@@ -90,6 +89,34 @@ def save_gui_config(config: dict[str, Any]) -> Path:
     return path
 
 
+def search_criteria_editor(settings: dict[str, Any]) -> None:
+    st.markdown("**Общие критерии поиска для V1 и V2**")
+    left, right = st.columns(2)
+    with left:
+        settings["yield_more"] = st.number_input("Доходность ОТ, %", value=float(settings.get("yield_more", 15)), step=1.0)
+        settings["price_more"] = st.number_input("Цена ОТ, % от номинала", value=float(settings.get("price_more", 70)), step=1.0)
+        settings["duration_more"] = st.number_input("Дюрация ОТ, месяцев", value=float(settings.get("duration_more", 3)), step=1.0)
+        settings["volume_more"] = st.number_input("Минимальный объём каждого из 15 дней, шт.", min_value=0.0, value=float(settings.get("volume_more", 2000)), step=100.0)
+    with right:
+        settings["yield_less"] = st.number_input("Доходность ДО, %", value=float(settings.get("yield_less", 40)), step=1.0)
+        settings["price_less"] = st.number_input("Цена ДО, % от номинала", value=float(settings.get("price_less", 120)), step=1.0)
+        settings["duration_less"] = st.number_input("Дюрация ДО, месяцев", value=float(settings.get("duration_less", 18)), step=1.0)
+        settings["bond_volume_more"] = st.number_input("Совокупный объём за 15 дней, шт.", min_value=0.0, value=float(settings.get("bond_volume_more", 60000)), step=1000.0)
+    settings["require_known_coupons"] = st.checkbox(
+        "Только облигации с известными купонами до погашения",
+        value=bool(settings.get("require_known_coupons", True)),
+    )
+    errors = []
+    if settings["yield_more"] > settings["yield_less"]:
+        errors.append("Доходность ОТ больше доходности ДО")
+    if settings["price_more"] > settings["price_less"]:
+        errors.append("Цена ОТ больше цены ДО")
+    if settings["duration_more"] > settings["duration_less"]:
+        errors.append("Дюрация ОТ больше дюрации ДО")
+    if errors:
+        st.error("; ".join(errors))
+
+
 def config_editor() -> dict[str, Any]:
     active = PROJECT_ROOT / "configs" / "gui_active.json"
     source = active if active.exists() else DEFAULT_CONFIG
@@ -103,32 +130,25 @@ def config_editor() -> dict[str, Any]:
                 settings["enabled"] = st.toggle(title, value=bool(settings.get("enabled", True)), key=f"enabled_{key}")
                 st.caption(description)
                 if key == "market_search":
+                    search_criteria_editor(settings)
                     current = str(settings.get("version", "v1")).lower()
                     scanner_label = st.radio(
                         "Версия сканера",
                         ["V1 — старый контрольный", "V2 — пакетный экспериментальный"],
                         index=1 if current == "v2" else 0,
-                        horizontal=False,
                         key="market_scanner_version",
                     )
                     settings["version"] = "v2" if scanner_label.startswith("V2") else "v1"
                     if settings["version"] == "v2":
                         settings["workers"] = st.slider(
-                            "Параллельных запросов V2",
-                            min_value=1,
-                            max_value=8,
-                            value=int(settings.get("workers", 5)),
-                            key="market_v2_workers",
+                            "Параллельных запросов V2", min_value=1, max_value=8,
+                            value=int(settings.get("workers", 5)), key="market_v2_workers",
                         )
                         settings["cache_hours"] = st.number_input(
-                            "Срок кэша V2, часов",
-                            min_value=0.0,
-                            max_value=168.0,
-                            value=float(settings.get("cache_hours", 12)),
-                            step=1.0,
-                            key="market_v2_cache_hours",
+                            "Срок кэша V2, часов", min_value=0.0, max_value=168.0,
+                            value=float(settings.get("cache_hours", 12)), step=1.0, key="market_v2_cache_hours",
                         )
-                        st.warning("V2 экспериментальный. Для честного сравнения запускайте V1 и V2 в разные папки или очищайте результат этапа 1.")
+                        st.warning("V2 экспериментальный. V1 и V2 получают абсолютно одинаковые критерии поиска.")
         if st.button("Сохранить профиль модулей", use_container_width=True):
             st.success(f"Сохранено: {save_gui_config(config).relative_to(PROJECT_ROOT)}")
     return config
@@ -142,27 +162,17 @@ def execute_modules(run_dir: Path, modules: list[str], config_path: Path, refres
         command += ["--only-module", key]
     if refresh_ratings:
         command.append("--refresh-ratings")
-
     child_env = os.environ.copy()
     child_env["PYTHONUTF8"] = "1"
     child_env["PYTHONIOENCODING"] = "utf-8"
     child_env["PYTHONUNBUFFERED"] = "1"
-
     process = subprocess.Popen(
-        command,
-        cwd=PROJECT_ROOT,
-        env=child_env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        bufsize=1,
+        command, cwd=PROJECT_ROOT, env=child_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, encoding="utf-8", errors="replace", bufsize=1,
     )
     placeholder = st.empty()
-    lines: list[str] = []
+    lines: list[str] = [f"Python pipeline: {python_executable}"]
     assert process.stdout is not None
-    lines.append(f"Python pipeline: {python_executable}")
     placeholder.code("\n".join(lines), language="text")
     for line in process.stdout:
         lines.append(line.rstrip())
@@ -188,10 +198,15 @@ def run_with_ui(run_dir: Path, selected: list[str], config: dict[str, Any], refr
 
 def render_start_today(config: dict[str, Any]) -> None:
     st.subheader("Анализ на сегодня ещё не запускался")
-    st.info("Создам папку сегодняшнего дня и запущу включённые модули. Финальное решение можно оставить включённым при любой конфигурации.")
+    st.info("Создам папку сегодняшнего дня и запущу включённые модули.")
     st.caption(f"Pipeline будет запущен через: {project_python()}")
-    scanner = config.get("modules", {}).get("market_search", {}).get("version", "v1").upper()
-    st.info(f"Для первого этапа выбран сканер: {scanner}")
+    settings = config.get("modules", {}).get("market_search", {})
+    scanner = settings.get("version", "v1").upper()
+    st.info(
+        f"Первый этап: {scanner}; доходность {settings.get('yield_more', 15)}–{settings.get('yield_less', 40)}%; "
+        f"цена {settings.get('price_more', 70)}–{settings.get('price_less', 120)}%; "
+        f"дюрация {settings.get('duration_more', 3)}–{settings.get('duration_less', 18)} мес."
+    )
     enabled = [key for key in MODULE_KEYS if config.get("modules", {}).get(key, {}).get("enabled", True)]
     st.write("Будут запущены модули:")
     st.write(" → ".join(LABELS[key] for key in enabled))
@@ -258,10 +273,8 @@ def render_bonds(run_dir: Path) -> None:
 
 def render_rerun(run_dir: Path, config: dict[str, Any]) -> None:
     st.subheader("Обновить только часть анализа")
-    st.info("Финальное решение можно пересчитать отдельно. Оно использует только включённые модули и доступные результаты.")
+    st.info("Финальное решение можно пересчитать отдельно.")
     st.caption(f"Pipeline будет запущен через: {project_python()}")
-    scanner = config.get("modules", {}).get("market_search", {}).get("version", "v1").upper()
-    st.caption(f"Выбранный сканер первого этапа: {scanner}")
     selected = st.multiselect("Какие модули обновить", MODULE_KEYS, format_func=lambda key: LABELS[key], default=[])
     refresh = st.checkbox("Принудительно обновить рейтинги", value=False, key="rerun_refresh")
     enabled = {key for key in MODULE_KEYS if config.get("modules", {}).get(key, {}).get("enabled", True)}
