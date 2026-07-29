@@ -43,7 +43,7 @@
       "minimum_rating": "BBB-"
     },
     "decision": {
-      "enabled": false,
+      "enabled": true,
       "mode": "hard_filter"
     }
   }
