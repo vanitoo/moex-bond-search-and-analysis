@@ -21,7 +21,6 @@ STAGES = [
     "7_bonds_credit_analysis.py",
     "8_bonds_decision.py",
 ]
-
 FIRST_STAGE = 1
 LAST_STAGE = len(STAGES)
 DEFAULT_RATINGS_CACHE_HOURS = 24
@@ -34,37 +33,29 @@ def ratings_cache_is_fresh(path: Path, max_age_hours: float) -> bool:
     return datetime.now() - modified <= timedelta(hours=max_age_hours)
 
 
-def stage_arguments(
-    script_name: str,
-    impact_share: float,
-    project_root: Path,
-    config: dict,
-    refresh_ratings: bool = False,
-    ratings_cache_hours: float = DEFAULT_RATINGS_CACHE_HOURS,
-) -> list[str]:
+def stage_arguments(script_name: str, impact_share: float, project_root: Path, config: dict,
+                    config_path: Path | None = None, refresh_ratings: bool = False,
+                    ratings_cache_hours: float = DEFAULT_RATINGS_CACHE_HOURS) -> list[str]:
     spec = BY_SCRIPT[script_name]
     settings = module_config(config, spec.key)
     if script_name == "4b_bonds_purchase_volume.py":
-        configured = settings.get("impact_share", impact_share)
-        return ["--impact-share", str(configured)]
+        return ["--impact-share", str(settings.get("impact_share", impact_share))]
     if script_name == "7_bonds_credit_analysis.py":
         arguments = ["--data-dir", str(project_root / "data")]
         ratings_path = project_root / "data" / "issuer_ratings.xlsx"
         if not refresh_ratings and ratings_cache_is_fresh(ratings_path, ratings_cache_hours):
             arguments.append("--no-fetch-ratings")
         return arguments
+    if script_name == "8_bonds_decision.py":
+        actual = config_path or (project_root / "configs" / "balanced.json")
+        return ["--config", str(actual)]
     return []
 
 
 def find_latest_run_dir(project_root: Path) -> Path | None:
-    candidates = [
-        folder
-        for folder in project_root.glob("bond_????_??_??")
-        if folder.is_dir() and any(folder.glob("bond_search_*.xlsx"))
-    ]
-    if not candidates:
-        return None
-    return max(candidates, key=lambda folder: folder.stat().st_mtime)
+    candidates = [folder for folder in project_root.glob("bond_????_??_??")
+                  if folder.is_dir() and any(folder.glob("bond_search_*.xlsx"))]
+    return max(candidates, key=lambda folder: folder.stat().st_mtime) if candidates else None
 
 
 def resolve_run_dir(project_root: Path, requested: str | None, from_stage: int) -> Path:
@@ -72,30 +63,18 @@ def resolve_run_dir(project_root: Path, requested: str | None, from_stage: int) 
         return Path(requested).expanduser().resolve()
     if from_stage == 1:
         return project_root / f"bond_{datetime.now():%Y_%m_%d}"
-    latest = find_latest_run_dir(project_root)
-    if latest is None:
-        raise SystemExit(
-            "Не найдена папка предыдущего запуска с bond_search_*.xlsx. "
-            "Запустите pipeline с этапа 1 или передайте --run-dir."
-        )
-    print(f"Продолжаем последний незавершённый запуск: {latest}")
-    return latest
+    latest_dir = find_latest_run_dir(project_root)
+    if latest_dir is None:
+        raise SystemExit("Не найдена папка предыдущего запуска с bond_search_*.xlsx. Запустите этап 1 или передайте --run-dir.")
+    print(f"Продолжаем последний незавершённый запуск: {latest_dir}")
+    return latest_dir
 
 
 def run_portfolio_monitor(project_root: Path, run_dir: Path, portfolio_name: str) -> None:
-    command = [
-        sys.executable,
-        str(project_root / "10_portfolio_monitor.py"),
-        "daily",
-        "--name", portfolio_name,
-        "--run-dir", str(run_dir),
-        "--portfolio-dir", str(project_root / "data" / "virtual_portfolios"),
-        "--history-dir", str(project_root / "data" / "portfolio_monitor_history"),
-        "--report-dir", str(project_root / "reports"),
-    ]
-    print("\n" + "=" * 72)
-    print(f"Ежедневный мониторинг портфеля: {portfolio_name}")
-    print("=" * 72)
+    command = [sys.executable, str(project_root / "10_portfolio_monitor.py"), "daily", "--name", portfolio_name,
+               "--run-dir", str(run_dir), "--portfolio-dir", str(project_root / "data" / "virtual_portfolios"),
+               "--history-dir", str(project_root / "data" / "portfolio_monitor_history"),
+               "--report-dir", str(project_root / "reports")]
     subprocess.run(command, check=True, cwd=project_root)
 
 
@@ -114,23 +93,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Полный конвейер анализа облигаций")
     parser.add_argument("--from-stage", type=int, default=FIRST_STAGE, choices=range(FIRST_STAGE, LAST_STAGE + 1))
     parser.add_argument("--to-stage", type=int, default=LAST_STAGE, choices=range(FIRST_STAGE, LAST_STAGE + 1))
-    parser.add_argument(
-        "--only-module",
-        action="append",
-        default=[],
-        help="Запустить только указанный модуль. Можно передать несколько раз; порядок остаётся конвейерным.",
-    )
+    parser.add_argument("--only-module", action="append", default=[])
     parser.add_argument("--impact-share", type=float, default=0.10)
-    parser.add_argument("--config", help="JSON-конфигурация модулей; по умолчанию configs/balanced.json")
-    parser.add_argument("--refresh-ratings", action="store_true", help="Принудительно обновить рейтинги")
+    parser.add_argument("--config")
+    parser.add_argument("--refresh-ratings", action="store_true")
     parser.add_argument("--ratings-cache-hours", type=float, default=DEFAULT_RATINGS_CACHE_HOURS)
     parser.add_argument("--portfolio", action="append", default=[])
     parser.add_argument("--run-dir")
-    parser.add_argument(
-        "--reset-trace",
-        action="store_true",
-        help="Удалить журнал decisions перед запуском выбранных этапов",
-    )
+    parser.add_argument("--reset-trace", action="store_true")
     args = parser.parse_args()
 
     if args.from_stage > args.to_stage:
@@ -153,7 +123,6 @@ def main() -> None:
 
     print(f"Папка текущего запуска: {run_dir}")
     print(f"Стратегия: {config.get('strategy')}")
-    print(f"Общие справочные данные: {project_root / 'data'}")
     if args.only_module:
         print("Точечный запуск модулей: " + ", ".join(args.only_module))
 
@@ -164,18 +133,10 @@ def main() -> None:
             print(f"\nЭтап {number}: {script_name} — ОТКЛЮЧЁН конфигурацией")
             record_disabled(run_dir, spec, config)
             continue
-
-        script_path = project_root / script_name
-        command = [sys.executable, str(script_path)]
-        command += stage_arguments(
-            script_name,
-            args.impact_share,
-            project_root,
-            config,
-            refresh_ratings=args.refresh_ratings,
-            ratings_cache_hours=args.ratings_cache_hours,
-        )
-
+        command = [sys.executable, str(project_root / script_name)]
+        command += stage_arguments(script_name, args.impact_share, project_root, config, config_path,
+                                   refresh_ratings=args.refresh_ratings,
+                                   ratings_cache_hours=args.ratings_cache_hours)
         print("\n" + "=" * 72)
         print(f"Этап {number}: {script_name}")
         print(f"Модуль: {spec.key}; режим: {module_config(config, spec.key).get('mode', 'information')}")
@@ -184,13 +145,7 @@ def main() -> None:
         subprocess.run(command, check=True, cwd=run_dir)
         collect_stage(run_dir, spec, config)
 
-    final_file = run_dir / f"bond_candidates_{datetime.now():%Y-%m-%d}.json"
     print(f"\nКонвейер завершён. Все результаты находятся в: {run_dir}")
-    print(f"Журнал решений: {run_dir / 'decisions' / 'module_results.jsonl'}")
-    print(f"Сводка по бумагам: {run_dir / 'decisions' / 'securities_summary.json'}")
-    print(f"Сводка pipeline: {run_dir / 'decisions' / 'pipeline_summary.json'}")
-    print(f"Финальный вход портфеля: {final_file}")
-
     for portfolio_name in args.portfolio:
         run_portfolio_monitor(project_root, run_dir, portfolio_name)
 
