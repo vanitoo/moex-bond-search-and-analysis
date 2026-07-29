@@ -99,10 +99,27 @@ def run_portfolio_monitor(project_root: Path, run_dir: Path, portfolio_name: str
     subprocess.run(command, check=True, cwd=project_root)
 
 
+def selected_stage_numbers(args: argparse.Namespace) -> list[int]:
+    if not args.only_module:
+        return list(range(args.from_stage, args.to_stage + 1))
+    requested = set(args.only_module)
+    known = {BY_SCRIPT[name].key for name in STAGES}
+    unknown = sorted(requested - known)
+    if unknown:
+        raise SystemExit(f"Неизвестные модули: {', '.join(unknown)}. Доступны: {', '.join(sorted(known))}")
+    return [index for index, script in enumerate(STAGES, 1) if BY_SCRIPT[script].key in requested]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Полный конвейер анализа облигаций")
     parser.add_argument("--from-stage", type=int, default=FIRST_STAGE, choices=range(FIRST_STAGE, LAST_STAGE + 1))
     parser.add_argument("--to-stage", type=int, default=LAST_STAGE, choices=range(FIRST_STAGE, LAST_STAGE + 1))
+    parser.add_argument(
+        "--only-module",
+        action="append",
+        default=[],
+        help="Запустить только указанный модуль. Можно передать несколько раз; порядок остаётся конвейерным.",
+    )
     parser.add_argument("--impact-share", type=float, default=0.10)
     parser.add_argument("--config", help="JSON-конфигурация модулей; по умолчанию configs/balanced.json")
     parser.add_argument("--refresh-ratings", action="store_true", help="Принудительно обновить рейтинги")
@@ -124,7 +141,10 @@ def main() -> None:
     project_root = Path(__file__).resolve().parent
     config_path = Path(args.config).expanduser().resolve() if args.config else None
     config = load_config(config_path)
-    run_dir = resolve_run_dir(project_root, args.run_dir, args.from_stage)
+    numbers = selected_stage_numbers(args)
+    if not numbers:
+        raise SystemExit("Не выбран ни один модуль")
+    run_dir = resolve_run_dir(project_root, args.run_dir, min(numbers))
     run_dir.mkdir(parents=True, exist_ok=True)
 
     trace_dir = run_dir / "decisions"
@@ -134,8 +154,10 @@ def main() -> None:
     print(f"Папка текущего запуска: {run_dir}")
     print(f"Стратегия: {config.get('strategy')}")
     print(f"Общие справочные данные: {project_root / 'data'}")
+    if args.only_module:
+        print("Точечный запуск модулей: " + ", ".join(args.only_module))
 
-    for number in range(args.from_stage, args.to_stage + 1):
+    for number in numbers:
         script_name = STAGES[number - 1]
         spec = BY_SCRIPT[script_name]
         if not is_enabled(config, spec.key):
