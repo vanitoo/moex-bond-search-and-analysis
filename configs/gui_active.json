@@ -1,0 +1,50 @@
+{
+  "strategy": "balanced",
+  "modules": {
+    "market_search": {
+      "enabled": true,
+      "mode": "hard_filter"
+    },
+    "cashflow": {
+      "enabled": true,
+      "mode": "hard_filter",
+      "require_complete": true
+    },
+    "news_search": {
+      "enabled": true,
+      "mode": "information"
+    },
+    "news": {
+      "enabled": true,
+      "mode": "hard_stop"
+    },
+    "liquidity": {
+      "enabled": true,
+      "mode": "score",
+      "impact_share": 0.1
+    },
+    "ofz_spread": {
+      "enabled": true,
+      "mode": "score",
+      "warning_bp": 600,
+      "critical_bp": 1000
+    },
+    "analysis": {
+      "enabled": true,
+      "mode": "score"
+    },
+    "deep_analysis": {
+      "enabled": true,
+      "mode": "score"
+    },
+    "credit": {
+      "enabled": false,
+      "mode": "hard_filter",
+      "minimum_rating": "BBB-"
+    },
+    "decision": {
+      "enabled": false,
+      "mode": "hard_filter"
+    }
+  }
+}
