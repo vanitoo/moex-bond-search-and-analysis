@@ -1,7 +1,13 @@
 {
   "strategy": "balanced",
   "modules": {
-    "market_search": {"enabled": true, "mode": "hard_filter"},
+    "market_search": {
+      "enabled": true,
+      "mode": "hard_filter",
+      "version": "v1",
+      "workers": 5,
+      "cache_hours": 12
+    },
     "cashflow": {"enabled": true, "mode": "hard_filter", "require_complete": true},
     "news_search": {"enabled": true, "mode": "information"},
     "news": {"enabled": true, "mode": "hard_stop"},
