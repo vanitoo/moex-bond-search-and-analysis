@@ -7,6 +7,7 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from master_dataset import build_master_dataset
 from pipeline_architecture import BY_SCRIPT, collect_stage, is_enabled, load_config, module_config, record_disabled
 
 STAGES = [
@@ -206,6 +207,12 @@ def main() -> None:
         print("=" * 72)
         subprocess.run(command, check=True, cwd=run_dir)
         collect_stage(run_dir, spec, config)
+
+    try:
+        master_path = build_master_dataset(run_dir)
+        print(f"\nЕдиный набор данных GUI обновлён: {master_path}")
+    except Exception as exc:
+        print(f"\n⚠ Не удалось собрать bonds_master.json: {exc}")
 
     print(f"\nКонвейер завершён. Все результаты находятся в: {run_dir}")
     for portfolio_name in args.portfolio:
