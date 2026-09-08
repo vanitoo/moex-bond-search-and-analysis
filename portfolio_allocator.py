@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from portfolio_impact import deep_get, infer_issuer, portfolio_rows, risk_level, safe_float
-from portfolio_recommendation import recommend_candidate
 
 
 @dataclass(frozen=True)
@@ -39,6 +38,40 @@ def _score(bond: dict[str, Any]) -> float | None:
     return None
 
 
+def _position_secids(portfolio: dict[str, Any]) -> set[str]:
+    result: set[str] = set()
+    for item in portfolio.get("positions", []):
+        secid = str(item.get("secid") or item.get("SECID") or item.get("Код ценной бумаги") or "").strip()
+        if secid:
+            result.add(secid)
+    return result
+
+
+def _eligibility(bond: dict[str, Any], held: bool) -> tuple[bool, str, str]:
+    """Check investment eligibility without simulating a 100% single-position portfolio.
+
+    Concentration and liquidity sizing are handled later by the allocator itself. This
+    avoids rejecting every candidate in an empty portfolio merely because buying one
+    unit temporarily represents 100% of that portfolio.
+    """
+    decision = str(deep_get(bond, "decision.status") or "").strip()
+    decision_norm = decision.lower().replace("ё", "е")
+    score = _score(bond)
+    rating_known = deep_get(bond, "credit.rating") not in (None, "") or deep_get(bond, "credit.score") not in (None, "")
+    liquidity_known = deep_get(bond, "liquidity.max_purchase_rub") not in (None, "")
+
+    if "не покупать" in decision_norm:
+        return False, "НЕ ПОКУПАТЬ", "финальный модуль пометил выпуск как «Не покупать»"
+    if decision in ("", "Недостаточно данных") or score is None or not rating_known or not liquidity_known:
+        return False, "ОЖИДАЕТ ДАННЫХ", "не хватает финального решения, рейтинга/кредитного балла или ликвидности"
+
+    risk = risk_level(bond)
+    if risk == "high" or score < 60:
+        return False, "НЕ ПОКУПАТЬ", "высокий риск или недостаточный финальный скоринг"
+
+    return True, "ДОКУПИТЬ" if held else "КУПИТЬ", ""
+
+
 def _weight(bond: dict[str, Any], issuer_share_before: float) -> float:
     score = _score(bond)
     if score is None:
@@ -70,6 +103,7 @@ def allocate_budget(
 
     base_rows = portfolio_rows(portfolio, bonds_by_secid)
     base_total = sum(row["amount"] for row in base_rows)
+    held_secids = _position_secids(portfolio)
     base_by_secid: dict[str, float] = {}
     base_by_issuer: dict[str, float] = {}
     for row in base_rows:
@@ -97,10 +131,9 @@ def allocate_budget(
             excluded.append({"secid": secid, "reason": "нет корректной цены или одна бумага дороже бюджета"})
             continue
 
-        rec = recommend_candidate(portfolio, bond, unit_cost, bonds_by_secid)
-        if rec["action"] not in {"КУПИТЬ", "ДОКУПИТЬ", "ЗАМЕНИТЬ"}:
-            reason = "; ".join((rec.get("negatives") or []) + (rec.get("warnings") or [])) or rec["action"]
-            excluded.append({"secid": secid, "name": rec.get("name") or secid, "reason": reason})
+        allowed, action, eligibility_reason = _eligibility(bond, secid in held_secids)
+        if not allowed:
+            excluded.append({"secid": secid, "name": bond.get("name") or secid, "reason": eligibility_reason or action})
             continue
 
         issuer = infer_issuer(bond)
@@ -108,19 +141,19 @@ def allocate_budget(
         issuer_share_before = issuer_before / base_total * 100.0 if base_total > 0 else 0.0
         weight = _weight(bond, issuer_share_before)
         if weight <= 0:
-            excluded.append({"secid": secid, "name": rec.get("name") or secid, "reason": "недостаточный риск/скоринг для распределения"})
+            excluded.append({"secid": secid, "name": bond.get("name") or secid, "reason": "недостаточный риск/скоринг для распределения"})
             continue
 
         max_purchase = safe_float(deep_get(bond, "liquidity.max_purchase_rub"))
         eligible.append({
             "secid": secid,
             "bond": bond,
-            "name": rec.get("name") or secid,
+            "name": bond.get("name") or secid,
             "issuer": issuer,
             "unit_cost": unit_cost,
             "score": _score(bond),
             "risk": risk_level(bond),
-            "action": rec["action"],
+            "action": action,
             "weight": weight,
             "max_purchase": max_purchase,
             "quantity": 0,
@@ -136,7 +169,8 @@ def allocate_budget(
 
     def can_add(item: dict[str, Any]) -> bool:
         next_amount = item["amount"] + item["unit_cost"]
-        if next_amount > budget + 1e-9:
+        invested_now = sum(other["amount"] for other in eligible)
+        if invested_now + item["unit_cost"] > budget + 1e-9:
             return False
         if item["max_purchase"] is not None and next_amount > item["max_purchase"] + 1e-9:
             return False
@@ -151,14 +185,12 @@ def allocate_budget(
                 return False
         return True
 
-    # First pass: move each candidate toward its target in whole bonds.
     for item in sorted(eligible, key=lambda x: x["weight"], reverse=True):
         target_qty = int(math.floor(item["target"] / item["unit_cost"]))
         while item["quantity"] < target_qty and can_add(item):
             item["quantity"] += 1
             item["amount"] += item["unit_cost"]
 
-    # Second pass: spend the remaining cash where the relative target deficit is largest.
     while True:
         invested = sum(item["amount"] for item in eligible)
         reserve = budget - invested
