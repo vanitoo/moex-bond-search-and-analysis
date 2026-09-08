@@ -1,0 +1,3 @@
+from moex_bond_search_and_analysis.http_client import install_browser_defaults
+
+install_browser_defaults()
