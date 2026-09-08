@@ -23,6 +23,7 @@ from moex_bond_search_and_analysis.utils import create_news_folder, setup_encodi
 
 MOEX_TIMEOUT = 20
 DEFAULT_MAX_FAILURE_SHARE = 0.30
+DEFAULT_PROVIDERS = "google,moex,acra,expert_ra"
 
 
 def latest_search_file(root: Path) -> Path:
@@ -101,8 +102,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--providers",
-        default="google,moex",
-        help="Источники через запятую: google,moex",
+        default=DEFAULT_PROVIDERS,
+        help="Источники через запятую: google,moex,acra,expert_ra",
     )
     parser.add_argument(
         "--proxy-env",
