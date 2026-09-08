@@ -24,6 +24,7 @@
       "enabled": true,
       "mode": "information",
       "providers": ["google", "moex", "acra", "expert_ra"],
+      "proxy_enabled": false,
       "proxy_env": "NEWS_PROXY",
       "minimum_successful_providers": 1
     },
