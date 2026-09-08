@@ -1,5 +1,6 @@
 from datetime import datetime
 import os
+import re
 import emoji
 
 from moex_bond_search_and_analysis.logger import Logger
@@ -28,9 +29,16 @@ def google_search(company: str, log: Logger) -> list[NewsItem]:
     return items
 
 
+def safe_filename(value: str, max_length: int = 160) -> str:
+    """Возвращает безопасное имя файла для Windows/Linux/macOS."""
+    value = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", str(value))
+    value = re.sub(r"\s+", "_", value).strip(" ._")
+    return (value or "issuer")[:max_length].rstrip(" ._")
+
+
 def write_to_file(folder_path: str, company: str, news: list[NewsItem]) -> None:
     """✍️ Записывает новости в файл."""
-    filename = os.path.join(folder_path, f"{company.replace(' ', '_')}.txt")
+    filename = os.path.join(folder_path, f"{safe_filename(company)}.txt")
     with open(filename, "w", encoding="utf-8") as f:
         f.write(f"📰 Новости для компании {company}\n")
         f.write("=" * 50 + "\n\n")
