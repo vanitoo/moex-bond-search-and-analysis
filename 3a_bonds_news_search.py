@@ -49,21 +49,12 @@ def load_secids(source: Path) -> list[str]:
 
 
 def _moex_direct_get(url: str) -> requests.Response:
-    """Запрос к MOEX ISS без NEWS_PROXY/системного proxy.
-
-    NEWS_PROXY нужен внешним новостным источникам. MOEX ISS должен ходить напрямую,
-    иначе временно сломанный прокси может остановить определение эмитентов.
-    """
     session = requests.Session()
     session.trust_env = False
     return session.get(url, timeout=MOEX_TIMEOUT, headers={"User-Agent": "bond-pipeline/2.1"})
 
 
 def fetch_company_mapping(secids: list[str]) -> tuple[dict[str, list[str]], list[str]]:
-    """Возвращает эмитент → SECID и список выпусков, которые не удалось определить.
-
-    Сетевые ошибки MOEX ретраятся. Ошибка одного SECID больше не валит весь news_search.
-    """
     mapping: dict[str, list[str]] = {}
     failed: list[str] = []
     for index, secid in enumerate(secids, 1):
@@ -97,7 +88,6 @@ def fetch_company_mapping(secids: list[str]) -> tuple[dict[str, list[str]], list
                     last_error = RuntimeError("MOEX вернул пустое название эмитента")
             except (requests.RequestException, ValueError, KeyError, IndexError, RuntimeError) as exc:
                 last_error = exc
-
             if attempt < MOEX_ATTEMPTS:
                 delay = MOEX_RETRY_DELAY * attempt
                 like_print_log.info(
@@ -105,7 +95,6 @@ def fetch_company_mapping(secids: list[str]) -> tuple[dict[str, list[str]], list
                     f"{type(last_error).__name__}. Повтор через {delay:.1f} с."
                 )
                 time.sleep(delay)
-
         if not success:
             failed.append(secid)
             like_print_log.info(
@@ -130,21 +119,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Сбор новостей по найденным облигациям")
     parser.add_argument("--input", type=Path, help="Файл bond_search_YYYY-MM-DD.xlsx")
     parser.add_argument("--delay", type=float, default=1.0, help="Пауза между эмитентами, секунд")
+    parser.add_argument("--max-failure-share", type=float, default=DEFAULT_MAX_FAILURE_SHARE)
+    parser.add_argument("--providers", default=DEFAULT_PROVIDERS)
+    parser.add_argument("--proxy-env", default="NEWS_PROXY")
     parser.add_argument(
-        "--max-failure-share",
-        type=float,
-        default=DEFAULT_MAX_FAILURE_SHARE,
-        help="Максимальная доля эмитентов без единого доступного источника",
-    )
-    parser.add_argument(
-        "--providers",
-        default=DEFAULT_PROVIDERS,
-        help="Источники через запятую: google,moex,acra,expert_ra",
-    )
-    parser.add_argument(
-        "--proxy-env",
-        default="NEWS_PROXY",
-        help="Имя переменной окружения с прокси. Сам адрес в лог не выводится.",
+        "--use-proxy",
+        action="store_true",
+        help="Явно включить прокси только для Google News. MOEX/АКРА/Эксперт РА всегда идут напрямую.",
     )
     args = parser.parse_args()
     if not 0 <= args.max_failure_share <= 1:
@@ -170,10 +151,13 @@ def main() -> None:
             + ", ".join(unresolved_secids)
         )
     like_print_log.info("Источники: " + ", ".join(providers))
-    if proxy_url_from_env(args.proxy_env):
-        like_print_log.info(f"🌐 Прокси включён через переменную {args.proxy_env} (адрес скрыт)")
+    if args.use_proxy:
+        if proxy_url_from_env(args.proxy_env):
+            like_print_log.info(f"🌐 Прокси ВКЛЮЧЁН только для Google News через {args.proxy_env} (адрес скрыт)")
+        else:
+            like_print_log.info(f"⚠️ --use-proxy задан, но переменная {args.proxy_env} пуста; Google пойдёт напрямую")
     else:
-        like_print_log.info(f"🌐 Прокси не задан. Для Google можно установить {args.proxy_env}.")
+        like_print_log.info("🌐 Прокси ВЫКЛЮЧЕН. Все источники идут напрямую.")
 
     news_folder = Path(create_news_folder())
     removed = clear_news_folder(news_folder)
@@ -190,8 +174,8 @@ def main() -> None:
             company_secids,
             providers=providers,
             proxy_env=args.proxy_env,
+            use_proxy=args.use_proxy,
         )
-
         if result.items:
             try:
                 write_to_file(str(news_folder), company, result.items)
@@ -207,7 +191,6 @@ def main() -> None:
         if result.successful_providers == 0:
             unavailable_companies += 1
 
-        provider_payload = [status.as_dict() for status in result.providers]
         coverage_rows.append({
             "company": company,
             "secids": company_secids,
@@ -215,18 +198,15 @@ def main() -> None:
             "item_count": len(result.items),
             "successful_providers": result.successful_providers,
             "enabled_providers": result.enabled_providers,
-            "providers": provider_payload,
+            "providers": [status.as_dict() for status in result.providers],
         })
-
         for status in result.providers:
             if status.ok:
-                like_print_log.info(
-                    f"   ✅ {status.provider}: доступен, релевантных записей {status.item_count}"
-                )
+                proxy_note = " через proxy" if status.used_proxy else " напрямую"
+                like_print_log.info(f"   ✅ {status.provider}: доступен{proxy_note}, релевантных записей {status.item_count}")
             else:
-                like_print_log.info(
-                    f"   ⚠️ {status.provider}: недоступен: {status.error}"
-                )
+                proxy_note = " через proxy" if status.used_proxy else " напрямую"
+                like_print_log.info(f"   ⚠️ {status.provider}: недоступен{proxy_note}: {status.error}")
         if index < len(company_mapping):
             time.sleep(args.delay)
 
@@ -234,6 +214,7 @@ def main() -> None:
     coverage_path.write_text(
         json.dumps({
             "providers": providers,
+            "proxy_enabled": args.use_proxy,
             "companies": coverage_rows,
             "unresolved_secids": unresolved_secids,
         }, ensure_ascii=False, indent=2),
@@ -247,7 +228,6 @@ def main() -> None:
             f"{unavailable_companies} из {len(company_mapping)} эмитентов ({failure_share:.0%}), "
             f"допустимо не более {args.max_failure_share:.0%}."
         )
-
     like_print_log.info(
         f"🎉 Обработка завершена. Эмитентов с хотя бы одним доступным источником: "
         f"{len(company_mapping) - unavailable_companies}/{len(company_mapping)}. "
