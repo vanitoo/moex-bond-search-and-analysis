@@ -28,7 +28,7 @@ def decode_escaped_unicode(value: str) -> str:
 def source_files(root: Path) -> list[Path]:
     files: list[Path] = []
     for pattern in (
-        "news/**/*.txt", "news/**/*.md", "новости/**/*.txt", "новости/**/*.md",
+        "news*/**/*.txt", "news*/**/*.md", "новости*/**/*.txt", "новости*/**/*.md",
         "**/news_*.txt", "**/news_*.md",
     ):
         files.extend(root.glob(pattern))
@@ -67,7 +67,7 @@ def match_text(secid: str, names: list[str], files: list[Path]) -> tuple[str, li
 
 
 def load_coverage(root: Path) -> dict[str, dict]:
-    candidates = list(root.glob("news/**/_coverage_meta.json")) + list(root.glob("новости/**/_coverage_meta.json"))
+    candidates = list(root.glob("news*/**/_coverage_meta.json")) + list(root.glob("новости*/**/_coverage_meta.json"))
     if not candidates:
         return {}
     path = max(candidates, key=lambda item: item.stat().st_mtime)
