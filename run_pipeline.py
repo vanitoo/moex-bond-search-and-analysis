@@ -109,6 +109,8 @@ def stage_arguments(script_name: str, impact_share: float, project_root: Path, c
             "--providers", provider_value or "google,moex,acra,expert_ra",
             "--proxy-env", str(settings.get("proxy_env", "NEWS_PROXY")),
         ]
+        if settings.get("proxy_enabled", False):
+            arguments.append("--use-proxy")
         if "max_failure_share" in settings:
             arguments += ["--max-failure-share", str(settings["max_failure_share"])]
         return arguments
