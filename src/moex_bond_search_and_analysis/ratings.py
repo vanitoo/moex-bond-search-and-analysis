@@ -8,6 +8,8 @@ from typing import Any
 import pandas as pd
 import requests
 
+from moex_bond_search_and_analysis.http_client import browser_headers, browser_session
+
 
 EXPERT_RA_EXPORT_URL = "https://raexpert.ru/ratings/ratings-xlsx-export"
 EXPERT_RA_SOURCE = "АО «Эксперт РА»"
@@ -92,9 +94,7 @@ def parse_expert_ra_export(content: bytes) -> pd.DataFrame:
                 "Рейтинг": rating,
                 "Агентство": EXPERT_RA_SOURCE,
                 "Прогноз": _clean_identifier(item.get("Прогноз")),
-                "Дата рейтинга": item.get(
-                    "Дата присвоения/актуализации/изменения рейтинга"
-                ),
+                "Дата рейтинга": item.get("Дата присвоения/актуализации/изменения рейтинга"),
                 "Предыдущий рейтинг": "",
                 "Дата предыдущего рейтинга": "",
                 "Источник": url or "https://raexpert.ru/ratings/",
@@ -112,7 +112,8 @@ def fetch_expert_ra_ratings(
     session: requests.Session | None = None,
     as_of: datetime | None = None,
 ) -> pd.DataFrame:
-    client = session or requests.Session()
+    client = session or browser_session(trust_env=False)
+    client.headers.update(browser_headers(referer="https://raexpert.ru/ratings/"))
     date_value = (as_of or datetime.now()).strftime("%d.%m.%Y")
     payload = {
         "Кредитные рейтинги": {
@@ -125,7 +126,6 @@ def fetch_expert_ra_ratings(
         params={"isSinglePage": 1, "virtual_date": date_value},
         json=payload,
         timeout=EXPERT_RA_TIMEOUT,
-        headers={"User-Agent": "Mozilla/5.0 bond-rating-pipeline/1.0"},
     )
     response.raise_for_status()
     content_type = response.headers.get("Content-Type", "").lower()
@@ -147,8 +147,7 @@ def _rating_key(row: pd.Series) -> tuple[str, str, str, str]:
 
 def _is_automatic_expert_ra_row(row: pd.Series) -> bool:
     return (
-        _clean_identifier(row.get("Агентство")).lower()
-        == EXPERT_RA_SOURCE.lower()
+        _clean_identifier(row.get("Агентство")).lower() == EXPERT_RA_SOURCE.lower()
         and _clean_identifier(row.get("Комментарий")) == EXPERT_RA_AUTO_COMMENT
     )
 
@@ -157,9 +156,7 @@ def _latest_unique_rows(rows: pd.DataFrame) -> pd.DataFrame:
     if rows.empty:
         return rows.reindex(columns=RATING_COLUMNS)
     result = rows.reindex(columns=RATING_COLUMNS).copy()
-    result["_rating_date"] = pd.to_datetime(
-        result["Дата рейтинга"], errors="coerce", dayfirst=True
-    )
+    result["_rating_date"] = pd.to_datetime(result["Дата рейтинга"], errors="coerce", dayfirst=True)
     result["_key"] = result.apply(_rating_key, axis=1)
     result = result.sort_values("_rating_date", ascending=False, na_position="last")
     result = result.drop_duplicates("_key", keep="first")
@@ -177,9 +174,7 @@ def merge_rating_rows(existing: pd.DataFrame, fetched: pd.DataFrame) -> pd.DataF
     manual = existing.loc[~automatic_mask].copy()
     manual_keys = {_rating_key(row) for _, row in manual.iterrows()}
 
-    fresh_rows = [
-        row for _, row in fetched.iterrows() if _rating_key(row) not in manual_keys
-    ]
+    fresh_rows = [row for _, row in fetched.iterrows() if _rating_key(row) not in manual_keys]
     fresh = pd.DataFrame(fresh_rows, columns=RATING_COLUMNS)
 
     result = pd.concat([manual, fresh], ignore_index=True)
@@ -193,7 +188,8 @@ def enrich_issuer_identifiers(
     result = securities.copy()
     if "ИНН" not in result.columns:
         result["ИНН"] = ""
-    client = session or requests.Session()
+    client = session or browser_session(trust_env=False)
+    client.headers.update(browser_headers(referer="https://www.moex.com/"))
     failures: list[str] = []
 
     for index, row in result.iterrows():
@@ -211,7 +207,6 @@ def enrich_issuer_identifiers(
                     "securities.columns": "secid,emitent_title,emitent_inn",
                 },
                 timeout=MOEX_TIMEOUT,
-                headers={"User-Agent": "bond-rating-pipeline/1.0"},
             )
             response.raise_for_status()
             block = response.json().get("securities", {})
@@ -225,14 +220,7 @@ def enrich_issuer_identifiers(
                 continue
             secid_index = columns.index("secid")
             inn_index = columns.index("emitent_inn")
-            match = next(
-                (
-                    item
-                    for item in rows
-                    if str(item[secid_index]).strip().upper() == secid
-                ),
-                None,
-            )
+            match = next((item for item in rows if str(item[secid_index]).strip().upper() == secid), None)
             if match is None:
                 failures.append(f"{secid} (точное совпадение SECID не найдено)")
                 continue
