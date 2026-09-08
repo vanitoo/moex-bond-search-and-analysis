@@ -3,11 +3,16 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
+
+ROOT = Path(__file__).resolve().parent
+SRC = ROOT / "src"
+sys.path.insert(0, str(SRC))
 
 from pipeline_architecture import is_enabled, load_config
 from pipeline_common import clean_secid_rows, latest, merge_by_secid, safe_float
