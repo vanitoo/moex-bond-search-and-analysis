@@ -7,6 +7,15 @@ import sys
 import time
 from pathlib import Path
 
+try:
+    import truststore
+except ImportError:  # совместимость со старым venv до обновления зависимостей
+    truststore = None
+else:
+    # Это entrypoint приложения, поэтому безопасно подключаем системное хранилище
+    # сертификатов Windows/macOS/Linux до импорта requests/urllib3.
+    truststore.inject_into_ssl()
+
 import emoji
 import pandas as pd
 import requests
@@ -136,6 +145,14 @@ def main() -> None:
         parser.error("Нужно включить хотя бы один news provider")
 
     setup_encoding()
+    if truststore is None:
+        like_print_log.info(
+            "⚠️ truststore не установлен: HTTPS использует CA-bundle Python. "
+            "Установите зависимости проекта, чтобы использовать системные сертификаты Windows."
+        )
+    else:
+        like_print_log.info("🔐 HTTPS: используется системное хранилище доверенных сертификатов ОС")
+
     source = args.input or latest_search_file(Path.cwd())
     like_print_log.info(f"📂 Загружаем данные из {source.name}...")
     secids = load_secids(source)
