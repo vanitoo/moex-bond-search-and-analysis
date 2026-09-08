@@ -18,7 +18,13 @@
       "cache_hours": 12
     },
     "cashflow": {"enabled": true, "mode": "hard_filter", "require_complete": true},
-    "news_search": {"enabled": true, "mode": "information"},
+    "news_search": {
+      "enabled": true,
+      "mode": "information",
+      "providers": ["google", "moex"],
+      "proxy_env": "NEWS_PROXY",
+      "minimum_successful_providers": 1
+    },
     "news": {"enabled": true, "mode": "hard_stop"},
     "liquidity": {"enabled": true, "mode": "score", "impact_share": 0.10},
     "ofz_spread": {"enabled": true, "mode": "score", "warning_bp": 600, "critical_bp": 1000},
