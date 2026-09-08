@@ -61,11 +61,13 @@ class AggregatedNews:
 
 
 def proxy_url_from_env(env_name: str = "NEWS_PROXY") -> str | None:
-    for key in (env_name, "HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy"):
-        value = os.getenv(key)
-        if value and value.strip():
-            return value.strip()
-    return None
+    """Возвращает только явно заданный news proxy.
+
+    Системные HTTPS_PROXY/HTTP_PROXY намеренно не подхватываются: прокси для новостей
+    должен включаться явно, чтобы он случайно не влиял на MOEX/АКРА/Эксперт РА.
+    """
+    value = os.getenv(env_name)
+    return value.strip() if value and value.strip() else None
 
 
 def _proxies(proxy_url: str | None) -> dict[str, str] | None:
@@ -75,11 +77,13 @@ def _proxies(proxy_url: str | None) -> dict[str, str] | None:
 def _request(url: str, *, proxy_url: str | None = None, timeout: int = DEFAULT_TIMEOUT,
              attempts: int = DEFAULT_ATTEMPTS, retry_delay: float = DEFAULT_RETRY_DELAY) -> requests.Response:
     last_error: requests.RequestException | None = None
+    session = requests.Session()
+    session.trust_env = False
     for attempt in range(1, attempts + 1):
         try:
-            response = requests.get(url, timeout=timeout,
-                                    headers={"User-Agent": "Mozilla/5.0 bond-news-pipeline/2.1"},
-                                    proxies=_proxies(proxy_url))
+            response = session.get(url, timeout=timeout,
+                                   headers={"User-Agent": "Mozilla/5.0 bond-news-pipeline/2.1"},
+                                   proxies=_proxies(proxy_url))
             response.raise_for_status()
             return response
         except requests.RequestException as exc:
@@ -144,11 +148,6 @@ def moex_news(company: str, secids: Iterable[str] = (), *, proxy_url: str | None
 
 def _html_rating_news(url: str, provider: str, company: str, secids: Iterable[str],
                       *, proxy_url: str | None = None) -> list[NewsItem]:
-    """Извлекает релевантные рейтинговые действия с официальной страницы агентства.
-
-    Страницы агентств меняют верстку, поэтому намеренно используем устойчивый текстовый слой:
-    ищем блоки/ссылки, содержащие SECID или алиас эмитента, и сохраняем официальный URL.
-    """
     response = _request(url, proxy_url=proxy_url)
     if not response.content.strip():
         raise RuntimeError(f"{provider}: пустой HTTP-ответ")
@@ -181,31 +180,32 @@ def expert_ra_news(company: str, secids: Iterable[str] = (), *, proxy_url: str |
 
 def aggregate_news(company: str, secids: Iterable[str] = (), *,
                    providers: Iterable[str] = ("google", "moex", "acra", "expert_ra"),
-                   proxy_env: str = "NEWS_PROXY") -> AggregatedNews:
-    proxy_url = proxy_url_from_env(proxy_env)
+                   proxy_env: str = "NEWS_PROXY", use_proxy: bool = False) -> AggregatedNews:
+    proxy_url = proxy_url_from_env(proxy_env) if use_proxy else None
     result = AggregatedNews()
     seen: set[tuple[str, str]] = set()
     for provider in providers:
         key = str(provider).strip().lower()
         if not key:
             continue
+        provider_proxy = proxy_url if key == "google" else None
         try:
             if key == "google":
-                items, provider_name = google_news(company, proxy_url=proxy_url), "Google News"
+                items, provider_name = google_news(company, proxy_url=provider_proxy), "Google News"
             elif key == "moex":
-                items, provider_name = moex_news(company, secids, proxy_url=proxy_url), "MOEX"
+                items, provider_name = moex_news(company, secids, proxy_url=None), "MOEX"
             elif key == "acra":
-                items, provider_name = acra_news(company, secids, proxy_url=proxy_url), "АКРА"
+                items, provider_name = acra_news(company, secids, proxy_url=None), "АКРА"
             elif key in {"expert_ra", "expertra", "raexpert"}:
-                items, provider_name = expert_ra_news(company, secids, proxy_url=proxy_url), "Эксперт РА"
+                items, provider_name = expert_ra_news(company, secids, proxy_url=None), "Эксперт РА"
             else:
                 result.providers.append(ProviderStatus(provider=key, ok=False, error="Неизвестный provider"))
                 continue
         except Exception as exc:
-            result.providers.append(ProviderStatus(provider=key, ok=False, error=str(exc), used_proxy=bool(proxy_url)))
+            result.providers.append(ProviderStatus(provider=key, ok=False, error=str(exc), used_proxy=bool(provider_proxy)))
             continue
         result.providers.append(ProviderStatus(provider=provider_name, ok=True, item_count=len(items),
-                                               used_proxy=bool(proxy_url)))
+                                               used_proxy=bool(provider_proxy)))
         for item in items:
             dedupe_key = (_normalize(item.title), str(item.url).strip())
             if dedupe_key not in seen:
