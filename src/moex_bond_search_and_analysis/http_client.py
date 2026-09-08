@@ -4,6 +4,7 @@ import json
 import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 import requests
 
@@ -13,6 +14,8 @@ DEFAULT_BROWSER_USER_AGENT = (
     "Chrome/140.0.0.0 Safari/537.36"
 )
 DEFAULT_ACCEPT_LANGUAGE = "ru-RU,ru;q=0.9,en;q=0.8"
+_PATCHED = False
+_ORIGINAL_SESSION_REQUEST = requests.sessions.Session.request
 
 
 def _project_root() -> Path:
@@ -79,3 +82,30 @@ def browser_session(*, trust_env: bool = False) -> requests.Session:
     session.trust_env = trust_env
     session.headers.update(browser_headers())
     return session
+
+
+def install_browser_defaults() -> None:
+    """Добавляет браузерные заголовки ко всем requests-запросам проекта.
+
+    Явно переданные заголовки имеют приоритет. Патч устанавливается один раз на процесс.
+    Это покрывает старые модули, которые пока вызывают requests.get/post напрямую.
+    """
+    global _PATCHED
+    if _PATCHED:
+        return
+
+    def request_with_browser_defaults(
+        session: requests.Session,
+        method: str,
+        url: str,
+        *args: Any,
+        **kwargs: Any,
+    ) -> requests.Response:
+        supplied = kwargs.get("headers") or {}
+        merged = browser_headers()
+        merged.update({str(key): str(value) for key, value in supplied.items()})
+        kwargs["headers"] = merged
+        return _ORIGINAL_SESSION_REQUEST(session, method, url, *args, **kwargs)
+
+    requests.sessions.Session.request = request_with_browser_defaults
+    _PATCHED = True
