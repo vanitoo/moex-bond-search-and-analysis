@@ -1,3 +1,7 @@
+from streamlit_compat import install_streamlit_width_compat
+
+install_streamlit_width_compat()
+
 from gui_app_v4 import main
 
 
