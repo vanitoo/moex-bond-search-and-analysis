@@ -1,5 +1,9 @@
 {
   "strategy": "balanced",
+  "http": {
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+    "accept_language": "ru-RU,ru;q=0.9,en;q=0.8"
+  },
   "modules": {
     "market_search": {
       "enabled": true,
@@ -22,6 +26,7 @@
       "enabled": true,
       "mode": "information",
       "providers": ["google", "moex", "acra", "expert_ra"],
+      "proxy_enabled": false,
       "proxy_env": "NEWS_PROXY",
       "minimum_successful_providers": 1
     },
