@@ -12,6 +12,7 @@ import feedparser
 import requests
 from bs4 import BeautifulSoup
 
+from moex_bond_search_and_analysis.http_client import browser_headers, browser_session
 from moex_bond_search_and_analysis.schemas import NewsItem
 
 
@@ -22,21 +23,10 @@ MOEX_ALL_NEWS_RSS = "https://www.moex.com/export/news.aspx?cat=200"
 ACRA_URL = "https://www.acra-ratings.ru/?lang=ru"
 EXPERT_RA_URL = "https://raexpert.ru/ratings/"
 
-DEFAULT_HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-    "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
-    "Cache-Control": "no-cache",
-}
-RSS_HEADERS = {
-    "User-Agent": DEFAULT_HEADERS["User-Agent"],
+RSS_HEADERS = browser_headers(extra={
     "Accept": "application/rss+xml,application/xml,text/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": DEFAULT_HEADERS["Accept-Language"],
-}
+})
 
-# MOEX RSS, АКРА и Эксперт РА содержат одну общую страницу/ленту для всех эмитентов.
-# Загружаем её максимум один раз за процесс и фильтруем локально, чтобы не делать
-# десятки одинаковых запросов и не повторять одну и ту же ошибку 36 раз.
 _STATIC_CONTENT_CACHE: dict[tuple[str, str], bytes] = {}
 _STATIC_CONTENT_ERRORS: dict[tuple[str, str], str] = {}
 
@@ -79,7 +69,6 @@ class AggregatedNews:
 
 
 def proxy_url_from_env(env_name: str = "NEWS_PROXY") -> str | None:
-    """Возвращает только явно заданный news proxy."""
     value = os.getenv(env_name)
     return value.strip() if value and value.strip() else None
 
@@ -92,9 +81,8 @@ def _request(url: str, *, proxy_url: str | None = None, timeout: int = DEFAULT_T
              attempts: int = DEFAULT_ATTEMPTS, retry_delay: float = DEFAULT_RETRY_DELAY,
              headers: dict[str, str] | None = None) -> requests.Response:
     last_error: requests.RequestException | None = None
-    session = requests.Session()
-    session.trust_env = False
-    request_headers = dict(DEFAULT_HEADERS)
+    session = browser_session(trust_env=False)
+    request_headers = browser_headers()
     if headers:
         request_headers.update(headers)
     for attempt in range(1, attempts + 1):
@@ -189,7 +177,7 @@ def moex_news(company: str, secids: Iterable[str] = (), *, proxy_url: str | None
 
 
 def _html_rating_news(url: str, provider: str, company: str, secids: Iterable[str]) -> list[NewsItem]:
-    content = _static_content(url, provider, headers=DEFAULT_HEADERS)
+    content = _static_content(url, provider, headers=browser_headers(referer=urllib.parse.urljoin(url, "/")))
     soup = BeautifulSoup(content, "html.parser")
     items: list[NewsItem] = []
     seen: set[str] = set()
