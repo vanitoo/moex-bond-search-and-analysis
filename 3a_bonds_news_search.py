@@ -9,11 +9,9 @@ from pathlib import Path
 
 try:
     import truststore
-except ImportError:  # совместимость со старым venv до обновления зависимостей
+except ImportError:
     truststore = None
 else:
-    # Это entrypoint приложения, поэтому безопасно подключаем системное хранилище
-    # сертификатов Windows/macOS/Linux до импорта requests/urllib3.
     truststore.inject_into_ssl()
 
 import emoji
@@ -24,9 +22,11 @@ ROOT = Path(__file__).resolve().parent
 SRC = ROOT / "src"
 sys.path.insert(0, str(SRC))
 
+from moex_bond_search_and_analysis.http_client import browser_session, user_agent
 from moex_bond_search_and_analysis.logger import like_print_log
 from moex_bond_search_and_analysis.news import write_to_file
 from moex_bond_search_and_analysis.news_sources import aggregate_news, proxy_url_from_env
+from moex_bond_search_and_analysis.rating_events import extract_rating_events
 from moex_bond_search_and_analysis.utils import create_news_folder, setup_encoding
 
 
@@ -58,9 +58,8 @@ def load_secids(source: Path) -> list[str]:
 
 
 def _moex_direct_get(url: str) -> requests.Response:
-    session = requests.Session()
-    session.trust_env = False
-    return session.get(url, timeout=MOEX_TIMEOUT, headers={"User-Agent": "bond-pipeline/2.1"})
+    session = browser_session(trust_env=False)
+    return session.get(url, timeout=MOEX_TIMEOUT)
 
 
 def fetch_company_mapping(secids: list[str]) -> tuple[dict[str, list[str]], list[str]]:
@@ -117,7 +116,7 @@ def fetch_company_mapping(secids: list[str]) -> tuple[dict[str, list[str]], list
 def clear_news_folder(folder: Path) -> int:
     removed = 0
     folder.mkdir(parents=True, exist_ok=True)
-    for pattern in ("*.txt", "_coverage_meta.json"):
+    for pattern in ("*.txt", "_coverage_meta.json", "_rating_events.json"):
         for old_file in folder.glob(pattern):
             old_file.unlink()
             removed += 1
@@ -152,6 +151,7 @@ def main() -> None:
         )
     else:
         like_print_log.info("🔐 HTTPS: используется системное хранилище доверенных сертификатов ОС")
+    like_print_log.info(f"🌍 HTTP User-Agent: {user_agent()}")
 
     source = args.input or latest_search_file(Path.cwd())
     like_print_log.info(f"📂 Загружаем данные из {source.name}...")
@@ -182,6 +182,7 @@ def main() -> None:
         like_print_log.info(f"🧹 Удалено старых файлов новостей/метаданных: {removed}")
 
     coverage_rows: list[dict] = []
+    all_rating_events: list[dict] = []
     unavailable_companies = 0
 
     for index, (company, company_secids) in enumerate(company_mapping.items(), 1):
@@ -193,6 +194,9 @@ def main() -> None:
             proxy_env=args.proxy_env,
             use_proxy=args.use_proxy,
         )
+        rating_events = extract_rating_events(company, company_secids, result.items)
+        all_rating_events.extend(event.as_dict() for event in rating_events)
+
         if result.items:
             try:
                 write_to_file(str(news_folder), company, result.items)
@@ -205,6 +209,13 @@ def main() -> None:
         else:
             like_print_log.info(f"ℹ️ Для {company} релевантных записей не найдено")
 
+        if rating_events:
+            summary = "; ".join(
+                f"{event.agency}: {event.action} {event.current_rating or ''} {event.forecast or ''}".strip()
+                for event in rating_events
+            )
+            like_print_log.info(f"   🏷️ Рейтинговые события: {summary}")
+
         if result.successful_providers == 0:
             unavailable_companies += 1
 
@@ -216,13 +227,13 @@ def main() -> None:
             "successful_providers": result.successful_providers,
             "enabled_providers": result.enabled_providers,
             "providers": [status.as_dict() for status in result.providers],
+            "rating_events": [event.as_dict() for event in rating_events],
         })
         for status in result.providers:
+            proxy_note = " через proxy" if status.used_proxy else " напрямую"
             if status.ok:
-                proxy_note = " через proxy" if status.used_proxy else " напрямую"
                 like_print_log.info(f"   ✅ {status.provider}: доступен{proxy_note}, релевантных записей {status.item_count}")
             else:
-                proxy_note = " через proxy" if status.used_proxy else " напрямую"
                 like_print_log.info(f"   ⚠️ {status.provider}: недоступен{proxy_note}: {status.error}")
         if index < len(company_mapping):
             time.sleep(args.delay)
@@ -237,6 +248,11 @@ def main() -> None:
         }, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
+    rating_events_path = news_folder / "_rating_events.json"
+    rating_events_path.write_text(
+        json.dumps({"events": all_rating_events}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
     failure_share = unavailable_companies / len(company_mapping)
     if failure_share > args.max_failure_share:
@@ -248,7 +264,7 @@ def main() -> None:
     like_print_log.info(
         f"🎉 Обработка завершена. Эмитентов с хотя бы одним доступным источником: "
         f"{len(company_mapping) - unavailable_companies}/{len(company_mapping)}. "
-        f"Покрытие: {coverage_path}"
+        f"Покрытие: {coverage_path}. Рейтинговых событий: {len(all_rating_events)}"
     )
 
 
