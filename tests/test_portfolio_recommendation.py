@@ -54,7 +54,7 @@ def test_do_not_buy_when_liquidity_limit_exceeded():
     assert any("лимита ликвидности" in reason for reason in result["negatives"])
 
 
-def test_do_not_buy_when_key_modules_are_missing():
+def test_wait_when_key_modules_are_missing():
     candidate = {
         "secid": "NEW",
         "name": "NEW",
@@ -63,5 +63,6 @@ def test_do_not_buy_when_key_modules_are_missing():
         "modules": {},
     }
     result = recommend_candidate({"name": "test", "positions": []}, candidate, 20_000, {"NEW": candidate})
-    assert result["action"] == "НЕ ПОКУПАТЬ"
-    assert any("недостаточно данных" in reason for reason in result["negatives"])
+    assert result["action"] == "ОЖИДАЕТ ДАННЫХ"
+    assert result["warnings"]
+    assert any("не хватает данных" in reason or "решение ещё не сформировано" in reason for reason in result["warnings"])
