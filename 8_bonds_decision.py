@@ -11,6 +11,7 @@ import pandas as pd
 
 from pipeline_architecture import is_enabled, load_config
 from pipeline_common import clean_secid_rows, latest, merge_by_secid, safe_float
+from moex_bond_search_and_analysis.rating_signal import build_rating_signal, load_rating_events
 
 RATING_ORDER = ["D", "C", "CC", "CCC", "B-", "B", "B+", "BB-", "BB", "BB+", "BBB-", "BBB", "BBB+", "A-", "A", "A+", "AA-", "AA", "AA+", "AAA"]
 CRITICAL = ("дефолт", "просроч", "банкрот", "не покрывает процент", "отрицательный операционный")
@@ -68,7 +69,7 @@ def choose_base(root: Path, config: dict, explicit: str | None) -> tuple[pd.Data
     raise FileNotFoundError("Нет ни одного доступного результата для финального решения")
 
 
-def decide(row: pd.Series, enabled: set[str], source_name: str) -> dict:
+def decide(row: pd.Series, enabled: set[str], source_name: str, rating_events: list[dict[str, Any]]) -> dict:
     scores: list[tuple[str, float, float]] = []
     blockers: list[str] = []
     warnings: list[str] = []
@@ -101,6 +102,7 @@ def decide(row: pd.Series, enabled: set[str], source_name: str) -> dict:
         if duration <= 18: base += 10
         scores.append(("Базовый рыночный отбор", max(0, min(100, base)), 1.0)); used.append("market_search")
 
+    secid = str(row.get("Код ценной бумаги") or "").strip().upper()
     current_rating = rating(row.get("Рейтинг"))
     risks = normalize(row.get("Риски") or row.get("Риски и ограничения"))
     if "credit" in enabled:
@@ -108,6 +110,16 @@ def decide(row: pd.Series, enabled: set[str], source_name: str) -> dict:
             blockers.append(f"Недопустимый рейтинг {current_rating}")
         if any(marker in risks for marker in CRITICAL):
             blockers.append("Критическое событие в кредитных рисках")
+
+    signal = build_rating_signal(rating_events, secid)
+    rating_event_adjustment = signal.bonus - signal.penalty
+    if rating_events:
+        used.append("rating_events")
+    if signal.hard_stop:
+        blockers.extend(signal.reasons or ("Критический рейтинговый сигнал",))
+    warnings.extend(signal.warnings)
+    if signal.positives:
+        reasons.extend(signal.positives)
 
     if "news" in enabled:
         critical_news = yes(row.get("Критический новостной стоп"))
@@ -144,7 +156,7 @@ def decide(row: pd.Series, enabled: set[str], source_name: str) -> dict:
             elif ofz_bp >= 600: warnings.append(f"Высокий спред к ОФЗ {ofz_bp:.0f} б.п.")
 
     weighted = sum(value * weight for _, value, weight in scores) / sum(weight for _, _, weight in scores)
-    score = int(round(max(0, min(100, weighted))))
+    score = int(round(max(0, min(100, weighted + rating_event_adjustment))))
     if blockers:
         decision, eligible, max_share = "Не покупать", False, "0%"
         score = min(score, 25)
@@ -158,6 +170,8 @@ def decide(row: pd.Series, enabled: set[str], source_name: str) -> dict:
         decision, eligible, max_share = "Не покупать", False, "0%"
 
     reasons.extend(f"{name}: {value:.0f}/100" for name, value, _ in scores)
+    if rating_event_adjustment:
+        reasons.append(f"Рейтинговые события: {rating_event_adjustment:+d} баллов")
     disabled = sorted(set(["cashflow", "news", "liquidity", "ofz_spread", "analysis", "deep_analysis", "credit"]) - enabled)
     completeness = "Полная" if not no_data else f"Неполная: нет данных {', '.join(sorted(set(no_data)))}"
 
@@ -172,10 +186,15 @@ def decide(row: pd.Series, enabled: set[str], source_name: str) -> dict:
         "Максимум к покупке, руб.": round(max_amount or 0, 2),
         "Максимум к покупке, шт.": max_qty,
         "Спред, %": spread,
-        "Рейтинг": current_rating,
+        "Рейтинг": current_rating or signal.latest_rating,
+        "Последнее рейтинговое действие": signal.latest_action or "—",
+        "Рейтинговое агентство": signal.latest_agency or "—",
+        "Прогноз рейтинга": signal.latest_forecast or row.get("Прогноз") or "—",
+        "Дата рейтингового события": signal.latest_event_date or "—",
+        "Корректировка за рейтинг": rating_event_adjustment,
         "Причины": "; ".join(reasons) or "—",
-        "Блокеры": "; ".join(blockers) or "—",
-        "Предупреждения": "; ".join(warnings) or "—",
+        "Блокеры": "; ".join(dict.fromkeys(blockers)) or "—",
+        "Предупреждения": "; ".join(dict.fromkeys(warnings)) or "—",
         "Учтённые модули": "; ".join(sorted(set(used))) or "—",
         "Отключённые модули": "; ".join(disabled) or "—",
         "Модули без данных": "; ".join(sorted(set(no_data))) or "—",
@@ -195,6 +214,7 @@ def main() -> None:
     config = load_config(Path(args.config).expanduser().resolve() if args.config else None)
     enabled = {key for key in config.get("modules", {}) if is_enabled(config, key)}
     df, source_name = choose_base(root, config, args.input)
+    rating_events = load_rating_events(root)
 
     optional = [
         ("cashflow", "bond_cashflow_*.xlsx", "Cashflow"),
@@ -209,7 +229,7 @@ def main() -> None:
         if key in enabled:
             df = merge_by_secid(df, load_optional(root, pattern, sheet))
 
-    result = pd.DataFrame([decide(row, enabled, source_name) for _, row in df.iterrows()])
+    result = pd.DataFrame([decide(row, enabled, source_name, rating_events) for _, row in df.iterrows()])
     result = result.sort_values(["Допущена в портфель", "Финальный балл"], ascending=[False, False])
     candidates = result[result["Допущена в портфель"] == "ДА"].copy()
 
@@ -221,10 +241,11 @@ def main() -> None:
     with pd.ExcelWriter(xlsx, engine="openpyxl") as writer:
         result.to_excel(writer, sheet_name="Решения", index=False)
         candidates.to_excel(writer, sheet_name="Кандидаты в портфель", index=False)
-        pd.DataFrame({"Параметр": ["Стратегия", "Включённые модули", "Базовый источник"], "Значение": [config.get("strategy"), ", ".join(sorted(enabled)), source_name]}).to_excel(writer, sheet_name="Конфигурация", index=False)
+        pd.DataFrame({"Параметр": ["Стратегия", "Включённые модули", "Базовый источник", "Рейтинговых событий"], "Значение": [config.get("strategy"), ", ".join(sorted(enabled)), source_name, len(rating_events)]}).to_excel(writer, sheet_name="Конфигурация", index=False)
     html.write_text(result.to_html(index=False), encoding="utf-8")
     json_path.write_text(json.dumps(candidates.to_dict(orient="records"), ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"Обработано уникальных SECID: {len(result)}")
+    print(f"Учтено рейтинговых событий: {len(rating_events)}")
     print(xlsx); print(html); print(json_path)
 
 
