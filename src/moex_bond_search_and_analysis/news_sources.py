@@ -22,6 +22,24 @@ MOEX_ALL_NEWS_RSS = "https://www.moex.com/export/news.aspx?cat=200"
 ACRA_URL = "https://www.acra-ratings.ru/?lang=ru"
 EXPERT_RA_URL = "https://raexpert.ru/ratings/"
 
+DEFAULT_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "ru-RU,ru;q=0.9,en;q=0.8",
+    "Cache-Control": "no-cache",
+}
+RSS_HEADERS = {
+    "User-Agent": DEFAULT_HEADERS["User-Agent"],
+    "Accept": "application/rss+xml,application/xml,text/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": DEFAULT_HEADERS["Accept-Language"],
+}
+
+# MOEX RSS, АКРА и Эксперт РА содержат одну общую страницу/ленту для всех эмитентов.
+# Загружаем её максимум один раз за процесс и фильтруем локально, чтобы не делать
+# десятки одинаковых запросов и не повторять одну и ту же ошибку 36 раз.
+_STATIC_CONTENT_CACHE: dict[tuple[str, str], bytes] = {}
+_STATIC_CONTENT_ERRORS: dict[tuple[str, str], str] = {}
+
 
 @dataclass
 class ProviderStatus:
@@ -61,11 +79,7 @@ class AggregatedNews:
 
 
 def proxy_url_from_env(env_name: str = "NEWS_PROXY") -> str | None:
-    """Возвращает только явно заданный news proxy.
-
-    Системные HTTPS_PROXY/HTTP_PROXY намеренно не подхватываются: прокси для новостей
-    должен включаться явно, чтобы он случайно не влиял на MOEX/АКРА/Эксперт РА.
-    """
+    """Возвращает только явно заданный news proxy."""
     value = os.getenv(env_name)
     return value.strip() if value and value.strip() else None
 
@@ -75,15 +89,22 @@ def _proxies(proxy_url: str | None) -> dict[str, str] | None:
 
 
 def _request(url: str, *, proxy_url: str | None = None, timeout: int = DEFAULT_TIMEOUT,
-             attempts: int = DEFAULT_ATTEMPTS, retry_delay: float = DEFAULT_RETRY_DELAY) -> requests.Response:
+             attempts: int = DEFAULT_ATTEMPTS, retry_delay: float = DEFAULT_RETRY_DELAY,
+             headers: dict[str, str] | None = None) -> requests.Response:
     last_error: requests.RequestException | None = None
     session = requests.Session()
     session.trust_env = False
+    request_headers = dict(DEFAULT_HEADERS)
+    if headers:
+        request_headers.update(headers)
     for attempt in range(1, attempts + 1):
         try:
-            response = session.get(url, timeout=timeout,
-                                   headers={"User-Agent": "Mozilla/5.0 bond-news-pipeline/2.1"},
-                                   proxies=_proxies(proxy_url))
+            response = session.get(
+                url,
+                timeout=timeout,
+                headers=request_headers,
+                proxies=_proxies(proxy_url),
+            )
             response.raise_for_status()
             return response
         except requests.RequestException as exc:
@@ -92,6 +113,24 @@ def _request(url: str, *, proxy_url: str | None = None, timeout: int = DEFAULT_T
                 time.sleep(retry_delay * attempt)
     assert last_error is not None
     raise last_error
+
+
+def _static_content(url: str, provider: str, *, headers: dict[str, str] | None = None) -> bytes:
+    cache_key = (provider, url)
+    if cache_key in _STATIC_CONTENT_CACHE:
+        return _STATIC_CONTENT_CACHE[cache_key]
+    if cache_key in _STATIC_CONTENT_ERRORS:
+        raise RuntimeError(_STATIC_CONTENT_ERRORS[cache_key])
+    try:
+        content = _request(url, proxy_url=None, headers=headers).content
+        if not content.strip():
+            raise RuntimeError(f"{provider}: пустой HTTP-ответ")
+    except Exception as exc:
+        message = str(exc)
+        _STATIC_CONTENT_ERRORS[cache_key] = message
+        raise RuntimeError(message) from exc
+    _STATIC_CONTENT_CACHE[cache_key] = content
+    return content
 
 
 def _parse_rss(content: bytes, provider: str) -> list[NewsItem]:
@@ -115,7 +154,7 @@ def _parse_rss(content: bytes, provider: str) -> list[NewsItem]:
 def google_news(company: str, *, proxy_url: str | None = None) -> list[NewsItem]:
     query = urllib.parse.quote(company)
     url = f"https://news.google.com/rss/search?q={query}+when:1y&hl=ru&gl=RU&ceid=RU:ru"
-    return _parse_rss(_request(url, proxy_url=proxy_url).content, "Google News")
+    return _parse_rss(_request(url, proxy_url=proxy_url, headers=RSS_HEADERS).content, "Google News")
 
 
 def _normalize(value: str) -> str:
@@ -126,8 +165,10 @@ def _company_aliases(company: str) -> list[str]:
     text = str(company or "").strip()
     aliases: list[str] = []
     aliases.extend(part.strip() for part in re.findall(r'["«“](.*?)["»”]', text) if len(part.strip()) >= 4)
-    cleaned = re.sub(r"\b(публичное|акционерное|общество|общество с ограниченной ответственностью|пао|ао|ооо|холдинговая компания)\b",
-                     " ", text, flags=re.IGNORECASE)
+    cleaned = re.sub(
+        r"\b(публичное|акционерное|общество|общество с ограниченной ответственностью|пао|ао|ооо|холдинговая компания)\b",
+        " ", text, flags=re.IGNORECASE,
+    )
     cleaned = re.sub(r'["«»“”]', " ", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,.-")
     if len(cleaned) >= 5:
@@ -142,16 +183,14 @@ def _matches(text: str, company: str, secids: Iterable[str]) -> bool:
 
 
 def moex_news(company: str, secids: Iterable[str] = (), *, proxy_url: str | None = None) -> list[NewsItem]:
-    items = _parse_rss(_request(MOEX_ALL_NEWS_RSS, proxy_url=proxy_url).content, "MOEX")
+    content = _static_content(MOEX_ALL_NEWS_RSS, "MOEX", headers=RSS_HEADERS)
+    items = _parse_rss(content, "MOEX")
     return [item for item in items if _matches(f"{item.title} {item.url}", company, secids)]
 
 
-def _html_rating_news(url: str, provider: str, company: str, secids: Iterable[str],
-                      *, proxy_url: str | None = None) -> list[NewsItem]:
-    response = _request(url, proxy_url=proxy_url)
-    if not response.content.strip():
-        raise RuntimeError(f"{provider}: пустой HTTP-ответ")
-    soup = BeautifulSoup(response.content, "html.parser")
+def _html_rating_news(url: str, provider: str, company: str, secids: Iterable[str]) -> list[NewsItem]:
+    content = _static_content(url, provider, headers=DEFAULT_HEADERS)
+    soup = BeautifulSoup(content, "html.parser")
     items: list[NewsItem] = []
     seen: set[str] = set()
     for node in soup.find_all(["a", "article", "li", "tr", "div"]):
@@ -171,11 +210,11 @@ def _html_rating_news(url: str, provider: str, company: str, secids: Iterable[st
 
 
 def acra_news(company: str, secids: Iterable[str] = (), *, proxy_url: str | None = None) -> list[NewsItem]:
-    return _html_rating_news(ACRA_URL, "АКРА", company, secids, proxy_url=proxy_url)
+    return _html_rating_news(ACRA_URL, "АКРА", company, secids)
 
 
 def expert_ra_news(company: str, secids: Iterable[str] = (), *, proxy_url: str | None = None) -> list[NewsItem]:
-    return _html_rating_news(EXPERT_RA_URL, "Эксперт РА", company, secids, proxy_url=proxy_url)
+    return _html_rating_news(EXPERT_RA_URL, "Эксперт РА", company, secids)
 
 
 def aggregate_news(company: str, secids: Iterable[str] = (), *,
@@ -193,11 +232,11 @@ def aggregate_news(company: str, secids: Iterable[str] = (), *,
             if key == "google":
                 items, provider_name = google_news(company, proxy_url=provider_proxy), "Google News"
             elif key == "moex":
-                items, provider_name = moex_news(company, secids, proxy_url=None), "MOEX"
+                items, provider_name = moex_news(company, secids), "MOEX"
             elif key == "acra":
-                items, provider_name = acra_news(company, secids, proxy_url=None), "АКРА"
+                items, provider_name = acra_news(company, secids), "АКРА"
             elif key in {"expert_ra", "expertra", "raexpert"}:
-                items, provider_name = expert_ra_news(company, secids, proxy_url=None), "Эксперт РА"
+                items, provider_name = expert_ra_news(company, secids), "Эксперт РА"
             else:
                 result.providers.append(ProviderStatus(provider=key, ok=False, error="Неизвестный provider"))
                 continue
