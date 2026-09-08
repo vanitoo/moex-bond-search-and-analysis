@@ -164,7 +164,6 @@ def recommend_candidate(
     if missing:
         warnings.append("не хватает данных: " + ", ".join(missing))
 
-    # До запуска ключевых аналитических модулей система не должна выдавать уверенное «Купить».
     decision_known = deep_get(candidate, "decision.status") not in (None, "")
     credit_known = deep_get(candidate, "credit.rating") not in (None, "") or deep_get(candidate, "credit.score") not in (None, "")
     liquidity_known = deep_get(candidate, "liquidity.max_purchase_rub") not in (None, "")
@@ -176,8 +175,8 @@ def recommend_candidate(
         action = "НЕ ПОКУПАТЬ"
         negatives = hard_reasons + negatives
     elif not enough_for_positive_action:
-        action = "НЕ ПОКУПАТЬ"
-        negatives.insert(0, "пока недостаточно данных для положительного решения")
+        action = "ОЖИДАЕТ ДАННЫХ"
+        warnings.insert(0, "положительное или отрицательное инвестиционное решение ещё не сформировано")
     elif risk == "high" or score is not None and score < 60:
         action = "НЕ ПОКУПАТЬ"
     elif scenario.get("liquidity_ok") is False or share >= 20 or (issuer_share is not None and issuer_share >= 25):
