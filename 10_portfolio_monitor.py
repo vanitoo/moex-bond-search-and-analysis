@@ -13,6 +13,7 @@ import pandas as pd
 import requests
 
 from pipeline_common import latest, safe_float
+from moex_bond_search_and_analysis.rating_signal import build_rating_signal, load_rating_events
 
 MOEX = "https://iss.moex.com/iss"
 RATING_ORDER = [
@@ -20,7 +21,7 @@ RATING_ORDER = [
     "BBB-", "BBB", "BBB+", "A-", "A", "A+", "AA-", "AA", "AA+", "AAA",
 ]
 HARD_SELL_DECISIONS = {"Не покупать"}
-REVIEW_DECISIONS = {"Недостаточно данных", "Рассматривать"}
+REVIEW_DECISIONS = {"Недостаточно данных", "Рассматривать", "Требуется ручная проверка"}
 
 
 def normalize(value: Any) -> str:
@@ -137,6 +138,8 @@ def classify_action(current: dict[str, Any], previous: dict[str, Any] | None) ->
     rating = normalize_rating(current.get("Рейтинг"))
     blockers = normalize(current.get("Блокеры"))
     hard_stop = normalize(current.get("Жёсткий стоп")) in {"да", "true", "1"}
+    rating_action = str(current.get("Последнее рейтинговое действие") or "").upper()
+    rating_forecast = normalize(current.get("Прогноз рейтинга"))
 
     if decision in HARD_SELL_DECISIONS:
         reasons.append(f"Финальное решение: {decision}")
@@ -144,10 +147,20 @@ def classify_action(current: dict[str, Any], previous: dict[str, Any] | None) ->
         reasons.append("Сработал жёсткий стоп")
     if rating in {"D", "C", "CC", "CCC"}:
         reasons.append(f"Критический рейтинг {rating}")
-    if any(marker in blockers for marker in ("дефолт", "просроч", "банкрот", "не выплачен")):
+    if any(marker in blockers for marker in ("дефолт", "просроч", "банкрот", "не выплачен", "критический рейтинг")):
         reasons.append("Критический блокер/событие")
     if reasons:
         return "ПРОДАТЬ", reasons
+
+    if rating_action == "ПОНИЖЕН":
+        soft += 2
+        reasons.append("Свежий рейтинговый downgrade")
+    elif rating_action == "ОТОЗВАН":
+        soft += 1
+        reasons.append("Рейтинг отозван: требуется перепроверка причины")
+    if "негатив" in rating_forecast or "развива" in rating_forecast:
+        soft += 1
+        reasons.append(f"Негативный рейтинговый прогноз: {current.get('Прогноз рейтинга')}")
 
     if decision in REVIEW_DECISIONS:
         soft += 1
@@ -204,6 +217,7 @@ def build_daily_rows(
     decisions: dict[str, dict[str, Any]],
     spreads: dict[str, dict[str, Any]],
     previous: dict[str, dict[str, Any]],
+    rating_events: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     for position in portfolio.get("positions", []):
@@ -231,14 +245,20 @@ def build_daily_rows(
             current["Ошибка рынка"] = str(exc)
 
         decision = decisions.get(secid, {})
+        signal = build_rating_signal(rating_events, secid)
         current.update({
             "Финальное решение": decision.get("Финальное решение") or "",
             "Финальный балл": decision.get("Финальный балл"),
-            "Рейтинг": decision.get("Рейтинг") or position.get("rating") or "",
+            "Рейтинг": decision.get("Рейтинг") or signal.latest_rating or position.get("rating") or "",
             "Прогноз": decision.get("Прогноз") or "",
+            "Прогноз рейтинга": decision.get("Прогноз рейтинга") or signal.latest_forecast or "",
+            "Последнее рейтинговое действие": decision.get("Последнее рейтинговое действие") or signal.latest_action or "",
+            "Рейтинговое агентство": decision.get("Рейтинговое агентство") or signal.latest_agency or "",
+            "Дата рейтингового события": decision.get("Дата рейтингового события") or signal.latest_event_date or "",
+            "Корректировка за рейтинг": decision.get("Корректировка за рейтинг") if decision else signal.bonus - signal.penalty,
             "Уверенность": decision.get("Уверенность") or "",
-            "Жёсткий стоп": decision.get("Жёсткий стоп") or "",
-            "Блокеры": decision.get("Блокеры") or "",
+            "Жёсткий стоп": decision.get("Жёсткий стоп") or ("ДА" if signal.hard_stop else ""),
+            "Блокеры": decision.get("Блокеры") or "; ".join(signal.reasons) or "",
             "Ручные проверки": decision.get("Ручные проверки") or "",
         })
         spread = spreads.get(secid, {})
@@ -281,104 +301,70 @@ def daily_cmd(args: argparse.Namespace) -> list[dict[str, Any]]:
     run_dir = Path(args.run_dir)
     portfolio = load_portfolio(args.name, portfolio_dir)
     previous = latest_previous_snapshot(history_dir, args.name)
-    rows_data = build_daily_rows(portfolio, load_decisions(run_dir), load_ofz_spreads(run_dir), previous)
+    rating_events = load_rating_events(run_dir)
+    rows_data = build_daily_rows(
+        portfolio,
+        load_decisions(run_dir),
+        load_ofz_spreads(run_dir),
+        previous,
+        rating_events,
+    )
     paths = write_daily_report(args.name, rows_data, history_dir, report_dir)
     for row in rows_data:
         print(f"{row['Код ценной бумаги']}: {row['Рекомендация мониторинга']} — {row['Причины рекомендации']}")
-    for path in paths:
-        print(path)
+    print("JSON:", paths[0])
+    print("XLSX:", paths[1])
+    print("HTML:", paths[2])
     return rows_data
 
 
-def load_candidates(run_dir: Path) -> list[dict[str, Any]]:
-    path = latest(run_dir, "bond_candidates_*.json", required=False)
-    if path is None:
-        return []
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    return payload if isinstance(payload, list) else payload.get("candidates", [])
-
-
 def monthly_cmd(args: argparse.Namespace) -> None:
-    rows_data = daily_cmd(args)
-    portfolio = load_portfolio(args.name, Path(args.portfolio_dir))
-    held = {str(item.get("secid")): item for item in portfolio.get("positions", [])}
-    actions: list[dict[str, Any]] = []
-    freed = 0.0
-    for row in rows_data:
-        action = row["Рекомендация мониторинга"]
-        qty = int(row.get("Количество") or 0)
-        market_value = safe_float(row.get("Рыночная стоимость, руб."), 0.0) or 0.0
-        if action == "ПРОДАТЬ":
-            freed += market_value
-            actions.append({"Действие": "ПРОДАТЬ", "Код ценной бумаги": row["Код ценной бумаги"], "Количество": qty, "Сумма, руб.": market_value, "Причина": row["Причины рекомендации"]})
-        elif action == "СОКРАТИТЬ НА 50%":
-            sell_qty = max(1, qty // 2)
-            amount = market_value * sell_qty / qty if qty else 0.0
-            freed += amount
-            actions.append({"Действие": "СОКРАТИТЬ", "Код ценной бумаги": row["Код ценной бумаги"], "Количество": sell_qty, "Сумма, руб.": amount, "Причина": row["Причины рекомендации"]})
-        else:
-            actions.append({"Действие": action, "Код ценной бумаги": row["Код ценной бумаги"], "Количество": 0, "Сумма, руб.": 0.0, "Причина": row["Причины рекомендации"]})
-
-    candidates = sorted(
-        load_candidates(Path(args.run_dir)),
-        key=lambda row: safe_float(row.get("Финальный балл"), 0.0) or 0.0,
-        reverse=True,
-    )
-    cash = safe_float(portfolio.get("cash"), 0.0) or 0.0
-    budget = cash + freed + max(0.0, args.add_amount)
-    additions: list[dict[str, Any]] = []
-    for candidate in candidates:
-        secid = str(candidate.get("Код ценной бумаги") or "").strip()
-        if not secid:
-            continue
-        max_amount = safe_float(candidate.get("Максимум к покупке, руб."), 0.0) or 0.0
-        if max_amount <= 0:
-            continue
-        action = "ДОКУПИТЬ СТАРУЮ" if secid in held else "КУПИТЬ НОВУЮ"
-        additions.append({
-            "Действие": action,
-            "Код ценной бумаги": secid,
-            "Название": candidate.get("Полное наименование") or secid,
-            "Рейтинг": candidate.get("Рейтинг"),
-            "Финальный балл": candidate.get("Финальный балл"),
-            "Максимум по ликвидности, руб.": max_amount,
-            "Доступный бюджет, руб.": budget,
-        })
-        if len(additions) >= args.top:
-            break
-
-    report_dir = Path(args.report_dir)
-    report_dir.mkdir(parents=True, exist_ok=True)
-    output = report_dir / f"portfolio_monthly_review_{safe_name(args.name)}_{datetime.now():%Y-%m-%d}.xlsx"
+    history_dir = Path(args.history_dir)
+    files = sorted(history_dir.glob(f"{safe_name(args.name)}_*.json"), key=lambda path: path.stat().st_mtime)
+    if not files:
+        raise FileNotFoundError("Нет истории мониторинга")
+    snapshots = []
+    for path in files:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        for row in payload.get("positions", []):
+            item = dict(row)
+            item["Снимок"] = payload.get("created_at")
+            snapshots.append(item)
+    df = pd.DataFrame(snapshots)
+    report_dir = Path(args.report_dir); report_dir.mkdir(parents=True, exist_ok=True)
+    output = report_dir / f"portfolio_monthly_{safe_name(args.name)}_{datetime.now():%Y-%m}.xlsx"
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        pd.DataFrame(actions).to_excel(writer, sheet_name="Текущие позиции", index=False)
-        pd.DataFrame(additions).to_excel(writer, sheet_name="Кандидаты на замену", index=False)
-        pd.DataFrame([{"Свободный кэш, руб.": cash, "Освободится при продажах, руб.": freed, "Новое пополнение, руб.": args.add_amount, "Итого бюджет, руб.": budget}]).to_excel(writer, sheet_name="Бюджет", index=False)
+        df.to_excel(writer, sheet_name="История", index=False)
+        if not df.empty and "Рекомендация мониторинга" in df.columns:
+            pivot = df.groupby(["Код ценной бумаги", "Рекомендация мониторинга"]).size().reset_index(name="Количество")
+            pivot.to_excel(writer, sheet_name="Сводка", index=False)
     print(output)
 
 
-def add_common(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--name", required=True)
-    parser.add_argument("--run-dir", default=".")
-    parser.add_argument("--portfolio-dir", default="data/virtual_portfolios")
-    parser.add_argument("--history-dir", default="data/portfolio_monitor_history")
-    parser.add_argument("--report-dir", default="reports")
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Мониторинг портфеля облигаций")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    daily = sub.add_parser("daily")
+    daily.add_argument("--name", required=True)
+    daily.add_argument("--run-dir", required=True)
+    daily.add_argument("--portfolio-dir", default="data/virtual_portfolios")
+    daily.add_argument("--history-dir", default="data/portfolio_monitor_history")
+    daily.add_argument("--report-dir", default="reports")
+    daily.set_defaults(func=daily_cmd)
+
+    monthly = sub.add_parser("monthly")
+    monthly.add_argument("--name", required=True)
+    monthly.add_argument("--history-dir", default="data/portfolio_monitor_history")
+    monthly.add_argument("--report-dir", default="reports")
+    monthly.set_defaults(func=monthly_cmd)
+    return parser
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Ежедневный мониторинг и ежемесячный пересмотр облигационного портфеля")
-    sub = parser.add_subparsers(dest="command", required=True)
-    daily = sub.add_parser("daily", help="Проверить только текущие позиции портфеля")
-    add_common(daily)
-    monthly = sub.add_parser("monthly", help="Проверить позиции и предложить докупки/замены")
-    add_common(monthly)
-    monthly.add_argument("--add-amount", type=float, default=0.0, help="Новое пополнение портфеля, руб.")
-    monthly.add_argument("--top", type=int, default=5, help="Сколько лучших кандидатов показать")
+    parser = build_parser()
     args = parser.parse_args()
-    if args.command == "daily":
-        daily_cmd(args)
-    else:
-        monthly_cmd(args)
+    args.func(args)
 
 
 if __name__ == "__main__":
