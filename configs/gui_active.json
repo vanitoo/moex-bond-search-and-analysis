@@ -3,7 +3,17 @@
   "modules": {
     "market_search": {
       "enabled": true,
-      "mode": "hard_filter"
+      "mode": "hard_filter",
+      "yield_more": 15.0,
+      "price_more": 70.0,
+      "duration_more": 3.0,
+      "volume_more": 2000.0,
+      "yield_less": 40.0,
+      "price_less": 120.0,
+      "duration_less": 18.0,
+      "bond_volume_more": 60000.0,
+      "require_known_coupons": true,
+      "version": "v1"
     },
     "cashflow": {
       "enabled": true,
