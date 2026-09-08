@@ -59,13 +59,30 @@ def read_table(path: Path, sheet_name: str | int = 0) -> pd.DataFrame:
 
 
 def merge_by_secid(base: pd.DataFrame, extra: pd.DataFrame, prefix: str = "") -> pd.DataFrame:
+    """Добавляет к base данные extra по SECID без каскада колонок ``_x/_y``.
+
+    Последующие pipeline-таблицы часто уже содержат поля предыдущих этапов. Повторное
+    обычное pandas.merge создаёт ``field_x/field_y`` и на следующем merge может упасть
+    с MergeError. Если prefix не задан, уже существующие в base поля считаются
+    каноническими и из extra берутся только новые поля. С prefix поведение прежнее:
+    все дополнительные поля получают явный префикс.
+    """
     if extra.empty or "Код ценной бумаги" not in extra.columns:
         return base
     base = clean_secid_rows(base)
     extra = clean_secid_rows(extra)
     if prefix:
         extra = extra.rename(columns={c: f"{prefix}{c}" for c in extra.columns if c != "Код ценной бумаги"})
-    return base.merge(extra, on="Код ценной бумаги", how="left")
+    else:
+        overlap = [
+            column for column in extra.columns
+            if column != "Код ценной бумаги" and column in base.columns
+        ]
+        if overlap:
+            extra = extra.drop(columns=overlap)
+    if len(extra.columns) == 1:
+        return base
+    return base.merge(extra, on="Код ценной бумаги", how="left", validate="one_to_one")
 
 
 def dated_name(prefix: str, suffix: str) -> str:
