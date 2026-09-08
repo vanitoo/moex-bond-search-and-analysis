@@ -22,6 +22,8 @@ from moex_bond_search_and_analysis.utils import create_news_folder, setup_encodi
 
 
 MOEX_TIMEOUT = 20
+MOEX_ATTEMPTS = 4
+MOEX_RETRY_DELAY = 1.5
 DEFAULT_MAX_FAILURE_SHARE = 0.30
 DEFAULT_PROVIDERS = "google,moex,acra,expert_ra"
 
@@ -46,38 +48,72 @@ def load_secids(source: Path) -> list[str]:
     return secids.drop_duplicates().tolist()
 
 
-def fetch_company_mapping(secids: list[str]) -> dict[str, list[str]]:
-    """Возвращает эмитент → список SECID, сохраняя связь для фильтрации официальной ленты MOEX."""
+def _moex_direct_get(url: str) -> requests.Response:
+    """Запрос к MOEX ISS без NEWS_PROXY/системного proxy.
+
+    NEWS_PROXY нужен внешним новостным источникам. MOEX ISS должен ходить напрямую,
+    иначе временно сломанный прокси может остановить определение эмитентов.
+    """
+    session = requests.Session()
+    session.trust_env = False
+    return session.get(url, timeout=MOEX_TIMEOUT, headers={"User-Agent": "bond-pipeline/2.1"})
+
+
+def fetch_company_mapping(secids: list[str]) -> tuple[dict[str, list[str]], list[str]]:
+    """Возвращает эмитент → SECID и список выпусков, которые не удалось определить.
+
+    Сетевые ошибки MOEX ретраятся. Ошибка одного SECID больше не валит весь news_search.
+    """
     mapping: dict[str, list[str]] = {}
+    failed: list[str] = []
     for index, secid in enumerate(secids, 1):
         like_print_log.info(f"[{index}/{len(secids)}] Определение эмитента: {secid}")
         url = (
             "https://iss.moex.com/iss/securities.json"
             f"?q={secid}&iss.meta=off&securities.columns=secid,emitent_title"
         )
-        try:
-            response = requests.get(url, timeout=MOEX_TIMEOUT)
-            response.raise_for_status()
-            payload = response.json()
-            block = payload.get("securities", {})
-            columns = block.get("columns", [])
-            rows = block.get("data", [])
-            if not rows or "emitent_title" not in columns:
-                like_print_log.info(f"⚠️ Эмитент для {secid} не найден")
-                continue
-            secid_idx = columns.index("secid")
-            title_idx = columns.index("emitent_title")
-            row = next((item for item in rows if str(item[secid_idx]).upper() == secid), rows[0])
-            company = str(row[title_idx] or "").strip()
-            if not company:
-                like_print_log.info(f"⚠️ MOEX вернул пустое название эмитента для {secid}")
-                continue
-            mapping.setdefault(company, []).append(secid)
-            like_print_log.info(f"✅ {secid} → {company}")
-        except (requests.RequestException, ValueError, KeyError, IndexError) as exc:
-            raise RuntimeError(f"Не удалось определить эмитента {secid}: {exc}") from exc
-        time.sleep(0.5)
-    return mapping
+        last_error: Exception | None = None
+        success = False
+        for attempt in range(1, MOEX_ATTEMPTS + 1):
+            try:
+                response = _moex_direct_get(url)
+                response.raise_for_status()
+                payload = response.json()
+                block = payload.get("securities", {})
+                columns = block.get("columns", [])
+                rows = block.get("data", [])
+                if not rows or "emitent_title" not in columns:
+                    last_error = RuntimeError("MOEX не вернул emitent_title")
+                else:
+                    secid_idx = columns.index("secid")
+                    title_idx = columns.index("emitent_title")
+                    row = next((item for item in rows if str(item[secid_idx]).upper() == secid), rows[0])
+                    company = str(row[title_idx] or "").strip()
+                    if company:
+                        mapping.setdefault(company, []).append(secid)
+                        like_print_log.info(f"✅ {secid} → {company}")
+                        success = True
+                        break
+                    last_error = RuntimeError("MOEX вернул пустое название эмитента")
+            except (requests.RequestException, ValueError, KeyError, IndexError, RuntimeError) as exc:
+                last_error = exc
+
+            if attempt < MOEX_ATTEMPTS:
+                delay = MOEX_RETRY_DELAY * attempt
+                like_print_log.info(
+                    f"   ⚠️ MOEX ISS ошибка для {secid}, попытка {attempt}/{MOEX_ATTEMPTS}: "
+                    f"{type(last_error).__name__}. Повтор через {delay:.1f} с."
+                )
+                time.sleep(delay)
+
+        if not success:
+            failed.append(secid)
+            like_print_log.info(
+                f"   ❌ Не удалось определить эмитента {secid} после {MOEX_ATTEMPTS} попыток: "
+                f"{last_error}. Выпуск пропущен, обработка продолжается."
+            )
+        time.sleep(0.2)
+    return mapping, failed
 
 
 def clear_news_folder(folder: Path) -> int:
@@ -124,10 +160,15 @@ def main() -> None:
     secids = load_secids(source)
     like_print_log.info(f"✅ Найдено выпусков: {len(secids)}")
 
-    company_mapping = fetch_company_mapping(secids)
+    company_mapping, unresolved_secids = fetch_company_mapping(secids)
     if not company_mapping:
         raise RuntimeError("Не удалось определить ни одного эмитента. Поиск новостей остановлен.")
     like_print_log.info(f"✅ Найдено уникальных эмитентов: {len(company_mapping)}")
+    if unresolved_secids:
+        like_print_log.info(
+            f"⚠️ Не удалось определить эмитента для {len(unresolved_secids)}/{len(secids)} выпусков: "
+            + ", ".join(unresolved_secids)
+        )
     like_print_log.info("Источники: " + ", ".join(providers))
     if proxy_url_from_env(args.proxy_env):
         like_print_log.info(f"🌐 Прокси включён через переменную {args.proxy_env} (адрес скрыт)")
@@ -152,8 +193,14 @@ def main() -> None:
         )
 
         if result.items:
-            write_to_file(str(news_folder), company, result.items)
-            like_print_log.info(emoji.emojize(f"✍️ Сохранено новостей: {len(result.items)} для {company}"))
+            try:
+                write_to_file(str(news_folder), company, result.items)
+                like_print_log.info(emoji.emojize(f"✍️ Сохранено новостей: {len(result.items)} для {company}"))
+            except OSError as exc:
+                like_print_log.info(
+                    f"   ⚠️ Не удалось записать файл новостей для {company}: {exc}. "
+                    "Покрытие источников будет сохранено, обработка продолжается."
+                )
         else:
             like_print_log.info(f"ℹ️ Для {company} релевантных записей не найдено")
 
@@ -185,7 +232,11 @@ def main() -> None:
 
     coverage_path = news_folder / "_coverage_meta.json"
     coverage_path.write_text(
-        json.dumps({"providers": providers, "companies": coverage_rows}, ensure_ascii=False, indent=2),
+        json.dumps({
+            "providers": providers,
+            "companies": coverage_rows,
+            "unresolved_secids": unresolved_secids,
+        }, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
 
