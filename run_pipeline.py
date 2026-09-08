@@ -8,7 +8,16 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from master_dataset import build_master_dataset
-from pipeline_architecture import BY_SCRIPT, collect_stage, is_enabled, load_config, module_config, record_disabled
+from pipeline_architecture import (
+    BY_SCRIPT,
+    append_event,
+    collect_stage,
+    is_enabled,
+    load_config,
+    module_config,
+    record_disabled,
+    write_summaries,
+)
 
 STAGES = [
     "1_bonds_search_by_criteria.py",
@@ -141,6 +150,22 @@ def selected_stage_numbers(args: argparse.Namespace) -> list[int]:
     return [index for index, script in enumerate(STAGES, 1) if BY_SCRIPT[script].key in requested]
 
 
+def record_stage_error(run_dir: Path, spec, config: dict, exc: subprocess.CalledProcessError) -> None:
+    mode = module_config(config, spec.key).get("mode", "information")
+    append_event(run_dir, {
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
+        "module": spec.key,
+        "status": "ERROR",
+        "passed": None,
+        "hard_stop": False,
+        "score_delta": 0,
+        "reason_code": "STAGE_PROCESS_ERROR",
+        "reason": f"Модуль завершился с кодом {exc.returncode}",
+        "mode": mode,
+    })
+    write_summaries(run_dir, config)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Полный конвейер анализа облигаций")
     parser.add_argument("--from-stage", type=int, default=FIRST_STAGE, choices=range(FIRST_STAGE, LAST_STAGE + 1))
@@ -179,6 +204,7 @@ def main() -> None:
     if args.only_module:
         print("Точечный запуск модулей: " + ", ".join(args.only_module))
 
+    soft_errors: list[str] = []
     for number in numbers:
         configured_name = STAGES[number - 1]
         script_name = actual_script(configured_name, config)
@@ -202,10 +228,22 @@ def main() -> None:
                 f"цена {settings.get('price_more', 70)}–{settings.get('price_less', 120)}%; "
                 f"дюрация {settings.get('duration_more', 3)}–{settings.get('duration_less', 18)} мес."
             )
-        print(f"Модуль: {spec.key}; режим: {module_config(config, spec.key).get('mode', 'information')}")
+        mode = module_config(config, spec.key).get("mode", "information")
+        print(f"Модуль: {spec.key}; режим: {mode}")
         print(f"Рабочая папка: {run_dir}")
         print("=" * 72)
-        subprocess.run(command, check=True, cwd=run_dir)
+        try:
+            subprocess.run(command, check=True, cwd=run_dir)
+        except subprocess.CalledProcessError as exc:
+            record_stage_error(run_dir, spec, config, exc)
+            if mode == "information":
+                soft_errors.append(spec.key)
+                print(
+                    f"\n⚠ Модуль {spec.key} недоступен/завершился с ошибкой, но имеет режим information. "
+                    "Конвейер продолжает работу; зависимые модули должны трактовать эти данные как отсутствующие."
+                )
+                continue
+            raise
         collect_stage(run_dir, spec, config)
 
     try:
@@ -214,6 +252,8 @@ def main() -> None:
     except Exception as exc:
         print(f"\n⚠ Не удалось собрать bonds_master.json: {exc}")
 
+    if soft_errors:
+        print("\n⚠ Конвейер завершён с неполными внешними данными: " + ", ".join(soft_errors))
     print(f"\nКонвейер завершён. Все результаты находятся в: {run_dir}")
     for portfolio_name in args.portfolio:
         run_portfolio_monitor(project_root, run_dir, portfolio_name)
