@@ -14,8 +14,8 @@ ACTION_ORDER = {
     "ПРОДАТЬ": 0,
     "СОКРАТИТЬ НА 50%": 1,
     "НЕ ДОКУПАТЬ / ПРОВЕРИТЬ": 2,
-    "ДЕРЖАТЬ": 3,
-    "ДОКУПИТЬ": 4,
+    "ДОКУПИТЬ": 3,
+    "ДЕРЖАТЬ": 4,
     "КУПИТЬ": 5,
     "ЗАМЕНИТЬ": 6,
     "НЕ ПОКУПАТЬ": 7,
@@ -106,6 +106,34 @@ def _candidate_actions(run_dir: Path, portfolio: dict[str, Any], amount: float) 
     return results
 
 
+def _reconcile_actions(monitor: list[dict[str, Any]], candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Never recommend adding to a held bond while monitor says reduce/check/sell.
+
+    A held position with a clean DЕРЖАТЬ signal may be upgraded to ДОКУПИТЬ when
+    the portfolio recommendation engine independently supports adding it.
+    """
+    by_secid = {str(item.get("secid")): dict(item) for item in monitor}
+    extras: list[dict[str, Any]] = []
+    for candidate in candidates:
+        secid = str(candidate.get("secid") or "")
+        current = by_secid.get(secid)
+        if current is None:
+            extras.append(candidate)
+            continue
+        if candidate.get("action") != "ДОКУПИТЬ":
+            continue
+        if current.get("action") == "ДЕРЖАТЬ":
+            merged = dict(current)
+            merged["action"] = "ДОКУПИТЬ"
+            positive_reason = str(candidate.get("reason") or "").strip()
+            monitor_reason = str(current.get("reason") or "").strip()
+            merged["reason"] = "; ".join(x for x in [positive_reason, monitor_reason] if x and x != "—") or "Положительное решение модели"
+            merged["amount"] = candidate.get("amount")
+            merged["confidence"] = candidate.get("confidence")
+            by_secid[secid] = merged
+    return list(by_secid.values()) + extras
+
+
 def build_daily_actions(
     portfolio_name: str,
     run_dir: Path,
@@ -122,7 +150,7 @@ def build_daily_actions(
     portfolio = load_portfolio(portfolio_dir, portfolio_name)
     candidates = _candidate_actions(run_dir, portfolio, amount)
 
-    actions = monitor + candidates
+    actions = _reconcile_actions(monitor, candidates)
     actions.sort(key=lambda x: (ACTION_ORDER.get(x["action"], 99), -(x.get("score") or -999)))
     counts: dict[str, int] = {}
     for item in actions:
