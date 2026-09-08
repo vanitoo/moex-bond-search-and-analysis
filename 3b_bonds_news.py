@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 from pathlib import Path
 
@@ -21,23 +22,17 @@ POSITIVE = {
 
 
 def decode_escaped_unicode(value: str) -> str:
-    """Декодирует имена вида #U0410#U043a..., создаваемые некоторыми загрузчиками."""
-    return re.sub(
-        r"#U([0-9A-Fa-f]{4,6})",
-        lambda match: chr(int(match.group(1), 16)),
-        value,
-    )
+    return re.sub(r"#U([0-9A-Fa-f]{4,6})", lambda match: chr(int(match.group(1), 16)), value)
 
 
 def source_files(root: Path) -> list[Path]:
     files: list[Path] = []
     for pattern in (
-        "news/**/*.txt", "news/**/*.md", "news/**/*.json",
-        "новости/**/*.txt", "новости/**/*.md", "новости/**/*.json",
-        "**/news_*.txt", "**/news_*.md", "**/news_*.json",
+        "news/**/*.txt", "news/**/*.md", "новости/**/*.txt", "новости/**/*.md",
+        "**/news_*.txt", "**/news_*.md",
     ):
         files.extend(root.glob(pattern))
-    unique = {p.resolve(): p for p in files if p.is_file() and p.stat().st_size <= 5_000_000}
+    unique = {p.resolve(): p for p in files if p.is_file() and p.stat().st_size <= 5_000_000 and not p.name.startswith("_")}
     return list(unique.values())
 
 
@@ -71,6 +66,41 @@ def match_text(secid: str, names: list[str], files: list[Path]) -> tuple[str, li
     return "\n".join(chunks), matched
 
 
+def load_coverage(root: Path) -> dict[str, dict]:
+    candidates = list(root.glob("news/**/_coverage_meta.json")) + list(root.glob("новости/**/_coverage_meta.json"))
+    if not candidates:
+        return {}
+    path = max(candidates, key=lambda item: item.stat().st_mtime)
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    result: dict[str, dict] = {}
+    for item in payload.get("companies", []):
+        if not isinstance(item, dict):
+            continue
+        for secid in item.get("secids", []):
+            result[str(secid).strip().upper()] = item
+    return result
+
+
+def coverage_description(meta: dict | None) -> str:
+    if not meta:
+        return "NO_DATA"
+    coverage = str(meta.get("coverage") or "NO_DATA").upper()
+    providers = meta.get("providers") or []
+    ok = [str(item.get("provider")) for item in providers if isinstance(item, dict) and item.get("ok")]
+    failed = [str(item.get("provider")) for item in providers if isinstance(item, dict) and not item.get("ok")]
+    parts = [coverage]
+    if ok:
+        parts.append("доступны: " + ", ".join(ok))
+    if failed:
+        parts.append("недоступны: " + ", ".join(failed))
+    if int(meta.get("item_count") or 0) == 0 and ok:
+        parts.append("релевантных новостей не найдено")
+    return "; ".join(parts)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input")
@@ -79,7 +109,9 @@ def main() -> None:
     args = parser.parse_args()
     source = Path(args.input) if args.input else latest(Path("."), "bond_search_*.xlsx")
     df = clean_secid_rows(pd.read_excel(source, sheet_name="Результаты поиска"))
-    files = source_files(Path(args.news_dir))
+    news_root = Path(args.news_dir)
+    files = source_files(news_root)
+    coverage = load_coverage(news_root)
     result = []
     for _, row in df.iterrows():
         secid = str(row.get("Код ценной бумаги") or "").strip().upper()
@@ -93,6 +125,7 @@ def main() -> None:
         normalized = normalize(text)
         dangers = [label for label, markers in DANGER.items() if any(marker in normalized for marker in markers)]
         positives = [label for label, markers in POSITIVE.items() if any(marker in normalized for marker in markers)]
+        meta = coverage.get(secid)
         result.append({
             "Код ценной бумаги": secid,
             "Новостных файлов": len(matched),
@@ -100,11 +133,14 @@ def main() -> None:
             "Позитивные события": "; ".join(positives) or "—",
             "Критический новостной стоп": "ДА" if any(x in dangers for x in ("Дефолт/просрочка", "Банкротство")) else "НЕТ",
             "Источники новостей": "; ".join(matched) or "—",
-            "Полнота новостей": "Нет данных" if not matched else "Есть локальные источники",
+            "Полнота новостей": coverage_description(meta),
+            "Провайдеров доступно": None if not meta else meta.get("successful_providers"),
+            "Провайдеров включено": None if not meta else meta.get("enabled_providers"),
         })
     output = Path(args.output or dated_name("bond_news", "xlsx"))
     pd.DataFrame(result).drop_duplicates(subset=["Код ценной бумаги"]).to_excel(output, sheet_name="Новости", index=False)
     print(f"Найдено новостных файлов: {len(files)}")
+    print(f"Метаданные покрытия для выпусков: {len(coverage)}")
     print(output)
 
 
