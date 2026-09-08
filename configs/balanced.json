@@ -21,7 +21,7 @@
     "news_search": {
       "enabled": true,
       "mode": "information",
-      "providers": ["google", "moex"],
+      "providers": ["google", "moex", "acra", "expert_ra"],
       "proxy_env": "NEWS_PROXY",
       "minimum_successful_providers": 1
     },
