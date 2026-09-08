@@ -99,6 +99,19 @@ def stage_arguments(script_name: str, impact_share: float, project_root: Path, c
                 "--cache-hours", str(settings.get("cache_hours", 12)),
             ]
         return arguments
+    if script_name == "3a_bonds_news_search.py":
+        providers = settings.get("providers", ["google", "moex", "acra", "expert_ra"])
+        if isinstance(providers, str):
+            provider_value = providers
+        else:
+            provider_value = ",".join(str(item).strip() for item in providers if str(item).strip())
+        arguments = [
+            "--providers", provider_value or "google,moex,acra,expert_ra",
+            "--proxy-env", str(settings.get("proxy_env", "NEWS_PROXY")),
+        ]
+        if "max_failure_share" in settings:
+            arguments += ["--max-failure-share", str(settings["max_failure_share"])]
+        return arguments
     if script_name == "4b_bonds_purchase_volume.py":
         return ["--impact-share", str(settings.get("impact_share", impact_share))]
     if script_name == "7_bonds_credit_analysis.py":
