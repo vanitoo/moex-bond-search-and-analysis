@@ -12,6 +12,16 @@ def _run(command: list[str], cwd: Path) -> None:
     subprocess.run(command, cwd=cwd, check=True)
 
 
+def latest_analysis_dir(root: Path) -> Path | None:
+    candidates = [
+        path for path in root.glob("bond_????_??_??")
+        if path.is_dir() and (path / "decisions").exists()
+    ]
+    if not candidates:
+        candidates = [path for path in root.glob("bond_????_??_??") if path.is_dir()]
+    return max(candidates, key=lambda path: path.name) if candidates else None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Ежедневный автопилот анализа облигаций")
     parser.add_argument(
@@ -33,7 +43,15 @@ def main() -> None:
 
     root = Path(__file__).resolve().parent
     python = sys.executable
-    run_dir = Path(args.run_dir).expanduser().resolve() if args.run_dir else root / f"bond_{datetime.now():%Y_%m_%d}"
+    if args.run_dir:
+        run_dir = Path(args.run_dir).expanduser().resolve()
+    elif args.mode == "full":
+        run_dir = root / f"bond_{datetime.now():%Y_%m_%d}"
+    else:
+        run_dir = latest_analysis_dir(root)
+        if run_dir is None:
+            raise SystemExit("Не найдена ни одна папка полного анализа bond_YYYY_MM_DD. Сначала выполните full.")
+
     config = Path(args.config).expanduser().resolve()
     portfolio_dir = root / "data" / "virtual_portfolios"
     history_dir = root / "data" / "portfolio_monitor_history"
@@ -86,7 +104,7 @@ def main() -> None:
     print("\nАвтопилот завершён")
     print(f"Режим: {args.mode}")
     print(f"Портфель: {args.portfolio}")
-    print(f"Папка анализа: {run_dir}")
+    print(f"Базовый полный анализ: {run_dir}")
 
 
 if __name__ == "__main__":
