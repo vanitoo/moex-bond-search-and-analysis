@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
 import os
+from functools import lru_cache
+from pathlib import Path
 
 import requests
 
@@ -12,14 +15,46 @@ DEFAULT_BROWSER_USER_AGENT = (
 DEFAULT_ACCEPT_LANGUAGE = "ru-RU,ru;q=0.9,en;q=0.8"
 
 
+def _project_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+@lru_cache(maxsize=1)
+def _http_config() -> dict[str, str]:
+    explicit = os.getenv("BOND_CONFIG", "").strip()
+    candidates: list[Path] = []
+    if explicit:
+        candidates.append(Path(explicit).expanduser())
+    root = _project_root()
+    candidates.extend([
+        root / "configs" / "gui_active.json",
+        root / "configs" / "balanced.json",
+    ])
+    for path in candidates:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        section = payload.get("http")
+        if isinstance(section, dict):
+            return {str(key): str(value) for key, value in section.items() if value is not None}
+    return {}
+
+
 def user_agent() -> str:
     value = os.getenv("BOND_HTTP_USER_AGENT", "").strip()
-    return value or DEFAULT_BROWSER_USER_AGENT
+    if value:
+        return value
+    configured = _http_config().get("user_agent", "").strip()
+    return configured or DEFAULT_BROWSER_USER_AGENT
 
 
 def accept_language() -> str:
     value = os.getenv("BOND_HTTP_ACCEPT_LANGUAGE", "").strip()
-    return value or DEFAULT_ACCEPT_LANGUAGE
+    if value:
+        return value
+    configured = _http_config().get("accept_language", "").strip()
+    return configured or DEFAULT_ACCEPT_LANGUAGE
 
 
 def browser_headers(*, referer: str | None = None, extra: dict[str, str] | None = None) -> dict[str, str]:
@@ -29,6 +64,8 @@ def browser_headers(*, referer: str | None = None, extra: dict[str, str] | None 
         "Accept-Language": accept_language(),
         "Cache-Control": "no-cache",
         "Pragma": "no-cache",
+        "DNT": "1",
+        "Upgrade-Insecure-Requests": "1",
     }
     if referer:
         headers["Referer"] = referer
