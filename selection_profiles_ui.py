@@ -32,6 +32,24 @@ def _put_profile_into_session(settings: dict[str, Any]) -> None:
         st.session_state[_WIDGET_KEYS[field]] = settings[field]
 
 
+def _number_input(label: str, field: str, default: float, step: float, min_value: float | None = None) -> float:
+    key = _WIDGET_KEYS[field]
+    kwargs: dict[str, Any] = {"step": step, "key": key}
+    if min_value is not None:
+        kwargs["min_value"] = min_value
+    if key not in st.session_state:
+        kwargs["value"] = float(default)
+    return float(st.number_input(label, **kwargs))
+
+
+def _checkbox(label: str, field: str, default: bool) -> bool:
+    key = _WIDGET_KEYS[field]
+    kwargs: dict[str, Any] = {"key": key}
+    if key not in st.session_state:
+        kwargs["value"] = bool(default)
+    return bool(st.checkbox(label, **kwargs))
+
+
 def search_criteria_editor(settings: dict[str, Any]) -> None:
     st.markdown("**Профиль предварительного отбора**")
     st.caption(
@@ -67,45 +85,35 @@ def search_criteria_editor(settings: dict[str, Any]) -> None:
     st.markdown("**Общие критерии поиска для V1 и V2**")
     left, right = st.columns(2)
     with left:
-        settings["yield_more"] = st.number_input(
-            "Доходность ОТ, %", value=float(settings.get("yield_more", 15)), step=1.0,
-            key=_WIDGET_KEYS["yield_more"],
+        settings["yield_more"] = _number_input(
+            "Доходность ОТ, %", "yield_more", float(settings.get("yield_more", 15)), 1.0
         )
-        settings["price_more"] = st.number_input(
-            "Цена ОТ, % от номинала", value=float(settings.get("price_more", 70)), step=1.0,
-            key=_WIDGET_KEYS["price_more"],
+        settings["price_more"] = _number_input(
+            "Цена ОТ, % от номинала", "price_more", float(settings.get("price_more", 70)), 1.0
         )
-        settings["duration_more"] = st.number_input(
-            "Дюрация ОТ, месяцев", min_value=0.0, value=float(settings.get("duration_more", 3)), step=1.0,
-            key=_WIDGET_KEYS["duration_more"],
+        settings["duration_more"] = _number_input(
+            "Дюрация ОТ, месяцев", "duration_more", float(settings.get("duration_more", 3)), 1.0, 0.0
         )
-        settings["volume_more"] = st.number_input(
-            "Минимальный объём каждого из 15 дней, шт.", min_value=0.0,
-            value=float(settings.get("volume_more", 2000)), step=100.0,
-            key=_WIDGET_KEYS["volume_more"],
+        settings["volume_more"] = _number_input(
+            "Минимальный объём каждого из 15 дней, шт.", "volume_more", float(settings.get("volume_more", 2000)), 100.0, 0.0
         )
     with right:
-        settings["yield_less"] = st.number_input(
-            "Доходность ДО, %", value=float(settings.get("yield_less", 40)), step=1.0,
-            key=_WIDGET_KEYS["yield_less"],
+        settings["yield_less"] = _number_input(
+            "Доходность ДО, %", "yield_less", float(settings.get("yield_less", 40)), 1.0
         )
-        settings["price_less"] = st.number_input(
-            "Цена ДО, % от номинала", value=float(settings.get("price_less", 120)), step=1.0,
-            key=_WIDGET_KEYS["price_less"],
+        settings["price_less"] = _number_input(
+            "Цена ДО, % от номинала", "price_less", float(settings.get("price_less", 120)), 1.0
         )
-        settings["duration_less"] = st.number_input(
-            "Дюрация ДО, месяцев", min_value=0.0, value=float(settings.get("duration_less", 18)), step=1.0,
-            key=_WIDGET_KEYS["duration_less"],
+        settings["duration_less"] = _number_input(
+            "Дюрация ДО, месяцев", "duration_less", float(settings.get("duration_less", 18)), 1.0, 0.0
         )
-        settings["bond_volume_more"] = st.number_input(
-            "Совокупный объём за 15 дней, шт.", min_value=0.0,
-            value=float(settings.get("bond_volume_more", 60000)), step=1000.0,
-            key=_WIDGET_KEYS["bond_volume_more"],
+        settings["bond_volume_more"] = _number_input(
+            "Совокупный объём за 15 дней, шт.", "bond_volume_more", float(settings.get("bond_volume_more", 60000)), 1000.0, 0.0
         )
-    settings["require_known_coupons"] = st.checkbox(
+    settings["require_known_coupons"] = _checkbox(
         "Только облигации с известными купонами до погашения",
-        value=bool(settings.get("require_known_coupons", True)),
-        key=_WIDGET_KEYS["require_known_coupons"],
+        "require_known_coupons",
+        bool(settings.get("require_known_coupons", True)),
     )
 
     errors: list[str] = []
