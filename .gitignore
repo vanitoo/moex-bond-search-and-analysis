@@ -1,6 +1,7 @@
 bond_*
 bonds*
 data/
+reports/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
