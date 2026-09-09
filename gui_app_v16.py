@@ -8,6 +8,7 @@ import gui_app_v15 as v15
 import gui_app_v2 as base
 import gui_app_v4 as v4
 import gui_app_v9 as v9
+import selection_profiles_ui
 
 
 def _render_new_analysis_tabs(config: dict) -> None:
@@ -33,6 +34,7 @@ def _render_new_analysis_tabs(config: dict) -> None:
 
 
 def main() -> None:
+    base.search_criteria_editor = selection_profiles_ui.search_criteria_editor
     v14._render_existing_tabs = v15._render_existing_tabs
     v10._render_new_analysis_tabs = _render_new_analysis_tabs
     v14.main()
