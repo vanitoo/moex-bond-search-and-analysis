@@ -1,4 +1,5 @@
 import importlib.util
+from datetime import datetime
 from pathlib import Path
 
 
@@ -79,3 +80,54 @@ def test_absent_fresh_decision_is_review_not_forced_sale():
     )
     assert action == "НЕ ДОКУПАТЬ / ПРОВЕРИТЬ"
     assert any("отсутствует" in reason for reason in reasons)
+
+
+def test_signal_persistence_tracks_days_and_strengthening():
+    history = [
+        {
+            "Рекомендация мониторинга": "НЕ ДОКУПАТЬ / ПРОВЕРИТЬ",
+            "_snapshot_day": "2026-09-05",
+        },
+        {
+            "Рекомендация мониторинга": "НЕ ДОКУПАТЬ / ПРОВЕРИТЬ",
+            "_snapshot_day": "2026-09-08",
+        },
+    ]
+    persistence = monitor.signal_persistence(
+        "СОКРАТИТЬ НА 50%",
+        history,
+        now=datetime(2026, 9, 9, 12, 0, 0),
+    )
+    assert persistence["first_seen"] == "2026-09-05"
+    assert persistence["days"] == 5
+    assert persistence["trend"] == "УСИЛИЛСЯ"
+
+
+def test_signal_disappearance_is_reported():
+    persistence = monitor.signal_persistence(
+        "ДЕРЖАТЬ",
+        [{"Рекомендация мониторинга": "НЕ ДОКУПАТЬ / ПРОВЕРИТЬ", "_snapshot_day": "2026-09-08"}],
+        now=datetime(2026, 9, 9, 12, 0, 0),
+    )
+    assert persistence["days"] == 0
+    assert persistence["trend"] == "ИСЧЕЗ"
+
+
+def test_persistent_material_review_escalates_to_reduce():
+    action, reasons = monitor.apply_signal_persistence(
+        "НЕ ДОКУПАТЬ / ПРОВЕРИТЬ",
+        ["Высокий спред к ОФЗ: 650 б.п."],
+        {"first_seen": "2026-09-05", "days": 5, "trend": "ДЕРЖИТСЯ 5 ДН."},
+    )
+    assert action == "СОКРАТИТЬ НА 50%"
+    assert any("5+ дней" in reason for reason in reasons)
+
+
+def test_persistent_generic_review_does_not_force_reduce():
+    action, reasons = monitor.apply_signal_persistence(
+        "НЕ ДОКУПАТЬ / ПРОВЕРИТЬ",
+        ["Решение ухудшилось до «Рассматривать»"],
+        {"first_seen": "2026-09-01", "days": 9, "trend": "ДЕРЖИТСЯ 9 ДН."},
+    )
+    assert action == "НЕ ДОКУПАТЬ / ПРОВЕРИТЬ"
+    assert reasons
