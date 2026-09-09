@@ -22,6 +22,20 @@ RATING_ORDER = [
 ]
 HARD_SELL_DECISIONS = {"Не покупать"}
 REVIEW_DECISIONS = {"Недостаточно данных", "Рассматривать", "Требуется ручная проверка"}
+ACTION_SEVERITY = {
+    "ДЕРЖАТЬ": 0,
+    "НЕ ДОКУПАТЬ / ПРОВЕРИТЬ": 1,
+    "СОКРАТИТЬ НА 50%": 2,
+    "ПРОДАТЬ": 3,
+}
+PERSISTENCE_ESCALATION_MARKERS = (
+    "рейтинг",
+    "прогноз",
+    "спред",
+    "цена",
+    "баллы",
+    "downgrade",
+)
 
 
 def normalize(value: Any) -> str:
@@ -131,6 +145,107 @@ def latest_previous_snapshot(history_dir: Path, portfolio_name: str) -> dict[str
     return {str(row.get("Код ценной бумаги")): row for row in payload.get("positions", [])}
 
 
+def _parse_datetime(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def load_signal_history(history_dir: Path, portfolio_name: str) -> dict[str, list[dict[str, Any]]]:
+    """Load one latest monitor row per SECID per calendar day."""
+    files = sorted(history_dir.glob(f"{safe_name(portfolio_name)}_*.json"), key=lambda path: path.stat().st_mtime)
+    per_day: dict[str, dict[str, dict[str, Any]]] = {}
+    for path in files:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        snapshot_dt = _parse_datetime(payload.get("created_at"))
+        for row in payload.get("positions", []):
+            secid = str(row.get("Код ценной бумаги") or "").strip()
+            if not secid:
+                continue
+            row_dt = _parse_datetime(row.get("Дата мониторинга")) or snapshot_dt
+            if row_dt is None:
+                continue
+            day = row_dt.date().isoformat()
+            item = dict(row)
+            item["_snapshot_dt"] = row_dt.isoformat()
+            item["_snapshot_day"] = day
+            current = per_day.setdefault(secid, {}).get(day)
+            current_dt = _parse_datetime(current.get("_snapshot_dt")) if current else None
+            if current is None or current_dt is None or row_dt >= current_dt:
+                per_day[secid][day] = item
+    return {
+        secid: [day_rows[day] for day in sorted(day_rows)]
+        for secid, day_rows in per_day.items()
+    }
+
+
+def signal_persistence(current_action: str, history_rows: list[dict[str, Any]], now: datetime | None = None) -> dict[str, Any]:
+    now = now or datetime.now()
+    current_severity = ACTION_SEVERITY.get(current_action, 0)
+    previous_action = str(history_rows[-1].get("Рекомендация мониторинга") or "") if history_rows else ""
+    previous_severity = ACTION_SEVERITY.get(previous_action, 0)
+
+    if current_severity == 0:
+        return {
+            "first_seen": "",
+            "days": 0,
+            "trend": "ИСЧЕЗ" if previous_severity > 0 else "НЕТ СИГНАЛА",
+        }
+
+    negative_days: list[str] = []
+    for row in reversed(history_rows):
+        action = str(row.get("Рекомендация мониторинга") or "")
+        if ACTION_SEVERITY.get(action, 0) <= 0:
+            break
+        day = str(row.get("_snapshot_day") or "").strip()
+        if day:
+            negative_days.append(day)
+    today = now.date().isoformat()
+    if today not in negative_days:
+        negative_days.append(today)
+    first_seen = min(negative_days) if negative_days else today
+    try:
+        days = (now.date() - datetime.fromisoformat(first_seen).date()).days + 1
+    except ValueError:
+        days = max(1, len(set(negative_days)))
+
+    if previous_severity == 0:
+        trend = "ПОЯВИЛСЯ"
+    elif current_severity > previous_severity:
+        trend = "УСИЛИЛСЯ"
+    elif current_severity < previous_severity:
+        trend = "ОСЛАБ"
+    else:
+        trend = f"ДЕРЖИТСЯ {days} ДН."
+    return {"first_seen": first_seen, "days": days, "trend": trend}
+
+
+def apply_signal_persistence(action: str, reasons: list[str], persistence: dict[str, Any]) -> tuple[str, list[str]]:
+    """Use persistence conservatively: it may escalate REVIEW to REDUCE, never to SELL by time alone."""
+    days = int(persistence.get("days") or 0)
+    trend = str(persistence.get("trend") or "")
+    result_reasons = list(reasons)
+    if action != "ДЕРЖАТЬ" and days >= 2:
+        result_reasons.append(f"Негативный сигнал держится {days} дн. ({trend.lower()})")
+
+    material_negative = any(
+        marker in normalize(reason)
+        for marker in PERSISTENCE_ESCALATION_MARKERS
+        for reason in reasons
+    )
+    if action == "НЕ ДОКУПАТЬ / ПРОВЕРИТЬ" and days >= 5 and material_negative:
+        result_reasons.append("Устойчивый рыночный/кредитный негатив 5+ дней")
+        return "СОКРАТИТЬ НА 50%", list(dict.fromkeys(result_reasons))
+    return action, list(dict.fromkeys(result_reasons))
+
+
 def classify_action(current: dict[str, Any], previous: dict[str, Any] | None) -> tuple[str, list[str]]:
     reasons: list[str] = []
     soft = 0
@@ -218,8 +333,10 @@ def build_daily_rows(
     spreads: dict[str, dict[str, Any]],
     previous: dict[str, dict[str, Any]],
     rating_events: list[dict[str, Any]],
+    signal_history: dict[str, list[dict[str, Any]]] | None = None,
 ) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
+    signal_history = signal_history or {}
     for position in portfolio.get("positions", []):
         secid = str(position.get("secid") or "").strip()
         current: dict[str, Any] = {
@@ -266,8 +383,13 @@ def build_daily_rows(
         current["Качество данных спреда"] = spread.get("Качество данных спреда") or "НЕИЗВЕСТНО"
 
         action, reasons = classify_action(current, previous.get(secid))
+        persistence = signal_persistence(action, signal_history.get(secid, []))
+        action, reasons = apply_signal_persistence(action, reasons, persistence)
         current["Рекомендация мониторинга"] = action
         current["Причины рекомендации"] = "; ".join(reasons)
+        current["Сигнал впервые"] = persistence["first_seen"]
+        current["Сигнал дней"] = persistence["days"]
+        current["Динамика сигнала"] = persistence["trend"]
         result.append(current)
     return result
 
@@ -301,6 +423,7 @@ def daily_cmd(args: argparse.Namespace) -> list[dict[str, Any]]:
     run_dir = Path(args.run_dir)
     portfolio = load_portfolio(args.name, portfolio_dir)
     previous = latest_previous_snapshot(history_dir, args.name)
+    signal_history = load_signal_history(history_dir, args.name)
     rating_events = load_rating_events(run_dir)
     rows_data = build_daily_rows(
         portfolio,
@@ -308,10 +431,14 @@ def daily_cmd(args: argparse.Namespace) -> list[dict[str, Any]]:
         load_ofz_spreads(run_dir),
         previous,
         rating_events,
+        signal_history,
     )
     paths = write_daily_report(args.name, rows_data, history_dir, report_dir)
     for row in rows_data:
-        print(f"{row['Код ценной бумаги']}: {row['Рекомендация мониторинга']} — {row['Причины рекомендации']}")
+        persistence = row.get("Динамика сигнала") or ""
+        days = row.get("Сигнал дней") or 0
+        suffix = f" [{persistence}; {days} дн.]" if persistence and persistence != "НЕТ СИГНАЛА" else ""
+        print(f"{row['Код ценной бумаги']}: {row['Рекомендация мониторинга']}{suffix} — {row['Причины рекомендации']}")
     print("JSON:", paths[0])
     print("XLSX:", paths[1])
     print("HTML:", paths[2])
