@@ -13,6 +13,7 @@ import requests
 
 from pipeline_common import latest, safe_float
 from portfolio_store import load_portfolio
+from moex_bond_search_and_analysis.rating_signal import build_rating_signal, load_rating_events
 
 MOEX = "https://iss.moex.com/iss"
 
@@ -92,41 +93,109 @@ def _append_text(value: Any, extra: str) -> str:
     return base if extra in base else f"{base}; {extra}"
 
 
-def overlay_fresh_news(run_dir: Path, news_path: Path) -> Path | None:
-    decisions_path = latest(run_dir, "bond_decisions_*.xlsx", required=False)
+def _latest_base_decisions(run_dir: Path) -> Path | None:
+    """Return the latest full-pipeline decision file, never a prior daily overlay."""
+    candidates = [
+        path for path in run_dir.glob("bond_decisions_*.xlsx")
+        if "_daily_" not in path.name and not path.name.startswith("~$")
+    ]
+    return max(candidates, key=lambda path: path.stat().st_mtime) if candidates else None
+
+
+def _prepare_text_columns(decisions: pd.DataFrame) -> None:
+    columns = (
+        "Финальное решение", "Жёсткий стоп", "Блокеры",
+        "Рейтинг", "Прогноз рейтинга", "Последнее рейтинговое действие",
+        "Рейтинговое агентство", "Дата рейтингового события",
+    )
+    for column in columns:
+        if column not in decisions.columns:
+            decisions[column] = pd.Series("", index=decisions.index, dtype="object")
+        else:
+            decisions[column] = decisions[column].astype("object")
+    if "Корректировка за рейтинг" not in decisions.columns:
+        decisions["Корректировка за рейтинг"] = 0.0
+
+
+def overlay_fresh_news(
+    run_dir: Path,
+    news_path: Path,
+    rating_events: list[dict[str, Any]] | None = None,
+) -> Path | None:
+    """Overlay today's news and structured rating signals onto the monthly decisions.
+
+    The function name is kept for backwards compatibility with existing callers/tests.
+    A new daily file is always built from the latest non-daily decision workbook so
+    repeated monitor runs do not compound yesterday's temporary overlays.
+    """
+    decisions_path = _latest_base_decisions(run_dir)
     if decisions_path is None or not news_path.exists():
         return None
+
     decisions = pd.read_excel(decisions_path, sheet_name="Решения")
     news = pd.read_excel(news_path, sheet_name="Новости")
     if "Код ценной бумаги" not in decisions.columns or "Код ценной бумаги" not in news.columns:
         return None
 
-    # Excel columns that contain only empty cells are inferred by pandas as
-    # float64 (NaN).  The daily overlay writes textual explanations into them,
-    # so make the mutable text columns explicitly object/string-compatible.
-    for column in ("Финальное решение", "Жёсткий стоп", "Блокеры"):
-        if column not in decisions.columns:
-            decisions[column] = pd.Series("", index=decisions.index, dtype="object")
-        else:
-            decisions[column] = decisions[column].astype("object")
+    _prepare_text_columns(decisions)
+    events = rating_events if rating_events is not None else load_rating_events(run_dir)
+    news_by = {str(row.get("Код ценной бумаги") or "").strip().upper(): row for _, row in news.iterrows()}
 
-    news_by = {str(row.get("Код ценной бумаги") or "").strip(): row for _, row in news.iterrows()}
     for idx, row in decisions.iterrows():
-        secid = str(row.get("Код ценной бумаги") or "").strip()
+        secid = str(row.get("Код ценной бумаги") or "").strip().upper()
         fresh = news_by.get(secid)
-        if fresh is None:
+
+        if fresh is not None:
+            negative = str(fresh.get("Негативные события") or "").strip()
+            critical = str(fresh.get("Критический новостной стоп") or "").strip().upper() == "ДА"
+            if critical:
+                decisions.at[idx, "Финальное решение"] = "Не покупать"
+                decisions.at[idx, "Жёсткий стоп"] = "ДА"
+                decisions.at[idx, "Блокеры"] = _append_text(
+                    decisions.at[idx, "Блокеры"], f"Свежий новостной стоп: {negative}"
+                )
+            elif negative and negative not in {"—", "nan"}:
+                current = str(decisions.at[idx, "Финальное решение"] or "").strip()
+                if current != "Не покупать":
+                    decisions.at[idx, "Финальное решение"] = "Требуется ручная проверка"
+                decisions.at[idx, "Блокеры"] = _append_text(
+                    decisions.at[idx, "Блокеры"], f"Свежий негатив: {negative}"
+                )
+
+        signal = build_rating_signal(events, secid)
+        has_rating_signal = bool(
+            signal.latest_action or signal.latest_rating or signal.latest_forecast
+            or signal.hard_stop or signal.penalty or signal.bonus
+        )
+        if not has_rating_signal:
             continue
-        negative = str(fresh.get("Негативные события") or "").strip()
-        critical = str(fresh.get("Критический новостной стоп") or "").strip().upper() == "ДА"
-        if critical:
-            decisions.at[idx, "Финальное решение"] = "Не покупать"
+
+        if signal.latest_rating:
+            decisions.at[idx, "Рейтинг"] = signal.latest_rating
+        if signal.latest_forecast:
+            decisions.at[idx, "Прогноз рейтинга"] = signal.latest_forecast
+        if signal.latest_action:
+            decisions.at[idx, "Последнее рейтинговое действие"] = signal.latest_action
+        if signal.latest_agency:
+            decisions.at[idx, "Рейтинговое агентство"] = signal.latest_agency
+        if signal.latest_event_date:
+            decisions.at[idx, "Дата рейтингового события"] = signal.latest_event_date
+        decisions.at[idx, "Корректировка за рейтинг"] = signal.bonus - signal.penalty
+
+        rating_explanations = list(signal.reasons) + list(signal.warnings)
+        for explanation in rating_explanations:
+            decisions.at[idx, "Блокеры"] = _append_text(
+                decisions.at[idx, "Блокеры"], f"Свежий рейтинг: {explanation}"
+            )
+
+        if signal.hard_stop:
             decisions.at[idx, "Жёсткий стоп"] = "ДА"
-            decisions.at[idx, "Блокеры"] = _append_text(row.get("Блокеры"), f"Свежий новостной стоп: {negative}")
-        elif negative and negative not in {"—", "nan"}:
-            current = str(row.get("Финальное решение") or "").strip()
-            if current not in {"Не покупать"}:
+            decisions.at[idx, "Финальное решение"] = "Не покупать"
+        elif signal.penalty > 0:
+            current = str(decisions.at[idx, "Финальное решение"] or "").strip()
+            if current != "Не покупать":
                 decisions.at[idx, "Финальное решение"] = "Требуется ручная проверка"
-            decisions.at[idx, "Блокеры"] = _append_text(row.get("Блокеры"), f"Свежий негатив: {negative}")
+
     stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
     output = run_dir / f"bond_decisions_daily_{stamp}.xlsx"
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
@@ -197,13 +266,15 @@ def main() -> None:
     except subprocess.CalledProcessError as exc:
         print(f"⚠️ Не удалось обновить спред к ОФЗ: {exc}. Мониторинг продолжится с последними доступными данными.")
 
-    overlaid = overlay_fresh_news(run_dir, news_output)
+    fresh_rating_events = load_rating_events(run_dir)
+    overlaid = overlay_fresh_news(run_dir, news_output, fresh_rating_events)
     print("\nЕжедневное обновление портфеля завершено")
     print(f"Портфель: {args.name}")
     print(f"Вход: {portfolio_input}")
     print(f"Новости: {news_output}")
+    print(f"Свежих структурированных рейтинговых событий: {len(fresh_rating_events)}")
     print(f"Спреды: {spread_output if spread_output.exists() else 'не обновлены'}")
-    print(f"Решения с учётом свежих новостей: {overlaid or 'не созданы'}")
+    print(f"Решения с учётом свежих новостей и рейтингов: {overlaid or 'не созданы'}")
 
 
 if __name__ == "__main__":
