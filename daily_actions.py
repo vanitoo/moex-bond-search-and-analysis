@@ -65,17 +65,24 @@ def _monitor_actions(current: dict[str, Any], previous: dict[str, Any] | None) -
             "rating_action": row.get("Последнее рейтинговое действие") or "",
             "rating_forecast": row.get("Прогноз рейтинга") or "",
             "ofz_spread_bp": row.get("Спред к ОФЗ, б.п."),
+            "signal_first_seen": row.get("Сигнал впервые") or "",
+            "signal_days": row.get("Сигнал дней") or 0,
+            "signal_trend": row.get("Динамика сигнала") or "",
         })
         old = previous_rows.get(secid)
         if old:
             old_action = str(old.get("Рекомендация мониторинга") or "")
-            if old_action and old_action != action:
+            old_trend = str(old.get("Динамика сигнала") or "")
+            new_trend = str(row.get("Динамика сигнала") or "")
+            if old_action and (old_action != action or old_trend != new_trend and new_trend in {"УСИЛИЛСЯ", "ОСЛАБ", "ИСЧЕЗ", "ПОЯВИЛСЯ"}):
                 changes.append({
                     "secid": secid,
                     "name": row.get("Название") or secid,
                     "from": old_action,
                     "to": action,
                     "reason": row.get("Причины рекомендации") or "—",
+                    "signal_trend": new_trend,
+                    "signal_days": row.get("Сигнал дней") or 0,
                 })
     return actions, changes
 
@@ -199,11 +206,14 @@ def main() -> None:
     )
     timestamped, latest = write_daily_actions(payload, Path(args.report_dir))
     for item in payload["actions"]:
-        print(f"{item['action']}: {item['secid']} — {item['reason']}")
+        persistence = item.get("signal_trend") or ""
+        days = item.get("signal_days") or 0
+        suffix = f" [{persistence}; {days} дн.]" if persistence and persistence != "НЕТ СИГНАЛА" else ""
+        print(f"{item['action']}: {item['secid']}{suffix} — {item['reason']}")
     if payload["changes"]:
         print("\nИзменения с прошлого снимка:")
         for item in payload["changes"]:
-            print(f"{item['secid']}: {item['from']} → {item['to']}")
+            print(f"{item['secid']}: {item['from']} → {item['to']} ({item.get('signal_trend') or 'без изменения тренда'})")
     print(f"JSON: {timestamped}")
     print(f"LATEST: {latest}")
 
