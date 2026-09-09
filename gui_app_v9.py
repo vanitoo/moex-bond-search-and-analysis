@@ -45,7 +45,7 @@ def _load_today(portfolio_name: str) -> dict:
 
 def render_today(run_dir: Path) -> None:
     st.subheader("Сегодня")
-    st.caption("Единая оперативная сводка: купить / докупить / держать / проверить / сократить / продать и изменения с прошлого снимка.")
+    st.caption("Единая оперативная сводка: купить / докупить / держать / проверить / сократить / продать, длительность сигнала и изменения с прошлого снимка.")
     portfolios = list_portfolios(PORTFOLIO_DIR)
     if not portfolios:
         st.info("Сначала создайте виртуальный портфель.")
@@ -74,6 +74,9 @@ def render_today(run_dir: Path) -> None:
             "Рейтинговое действие": item.get("rating_action"),
             "Прогноз": item.get("rating_forecast"),
             "Спред к ОФЗ, б.п.": item.get("ofz_spread_bp"),
+            "Сигнал впервые": item.get("signal_first_seen") or "—",
+            "Сигнал, дней": item.get("signal_days") or 0,
+            "Динамика": item.get("signal_trend") or "—",
             "Причина": item.get("reason"),
         } for item in actions]
         st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
@@ -81,13 +84,15 @@ def render_today(run_dir: Path) -> None:
     changes = payload.get("changes", [])
     st.markdown("### Изменения с прошлого снимка")
     if not changes:
-        st.success("Изменений действий с прошлого снимка нет.")
+        st.success("Изменений действий и значимых изменений тренда с прошлого снимка нет.")
     else:
         st.dataframe(pd.DataFrame([{
             "SECID": item.get("secid"),
             "Название": item.get("name"),
             "Было": item.get("from"),
             "Стало": item.get("to"),
+            "Динамика": item.get("signal_trend") or "—",
+            "Сигнал, дней": item.get("signal_days") or 0,
             "Причина": item.get("reason"),
         } for item in changes]), width="stretch", hide_index=True)
 
