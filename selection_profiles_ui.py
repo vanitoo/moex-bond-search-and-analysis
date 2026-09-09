@@ -76,12 +76,6 @@ def search_criteria_editor(settings: dict[str, Any]) -> None:
         _put_profile_into_session(settings)
         st.success(f"Применён профиль «{profile_label(selected)}». Ниже параметры можно изменить вручную.")
 
-    matched_before = matching_profile(settings)
-    if matched_before:
-        st.info(f"Текущие параметры совпадают с профилем: **{profile_label(matched_before)}**")
-    else:
-        st.info("Текущие параметры: **Пользовательский профиль** — один или несколько параметров изменены вручную.")
-
     st.markdown("**Общие критерии поиска для V1 и V2**")
     left, right = st.columns(2)
     with left:
@@ -128,6 +122,11 @@ def search_criteria_editor(settings: dict[str, Any]) -> None:
 
     current_profile = matching_profile(settings)
     settings["selection_profile"] = current_profile or "custom"
+    if current_profile:
+        st.info(f"Текущие параметры совпадают с профилем: **{profile_label(current_profile)}**")
+    else:
+        st.info("Текущие параметры: **Пользовательский профиль** — один или несколько параметров изменены вручную.")
+
     if current_profile in {"short", "medium", "long"}:
         st.caption(
             "Профиль по сроку — это фильтр кандидатов, а не характеристика качества. "
