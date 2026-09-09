@@ -24,13 +24,51 @@ def test_monitor_actions_detect_change():
     }
     actions, changes = _monitor_actions(current, previous)
     assert actions[0]["action"] == "НЕ ДОКУПАТЬ / ПРОВЕРИТЬ"
-    assert changes == [{
-        "secid": "RU1",
-        "name": "Bond 1",
-        "from": "ДЕРЖАТЬ",
-        "to": "НЕ ДОКУПАТЬ / ПРОВЕРИТЬ",
-        "reason": "Рейтинг понижен",
-    }]
+    assert actions[0]["signal_days"] == 0
+    assert actions[0]["signal_trend"] == ""
+
+    assert len(changes) == 1
+    change = changes[0]
+    assert change["secid"] == "RU1"
+    assert change["name"] == "Bond 1"
+    assert change["from"] == "ДЕРЖАТЬ"
+    assert change["to"] == "НЕ ДОКУПАТЬ / ПРОВЕРИТЬ"
+    assert change["reason"] == "Рейтинг понижен"
+    assert change["signal_days"] == 0
+    assert change["signal_trend"] == ""
+
+
+def test_monitor_actions_detect_signal_trend_change_without_action_change():
+    previous = {
+        "positions": [
+            {
+                "Код ценной бумаги": "RU1",
+                "Название": "Bond 1",
+                "Рекомендация мониторинга": "НЕ ДОКУПАТЬ / ПРОВЕРИТЬ",
+                "Динамика сигнала": "ДЕРЖИТСЯ 2 ДН.",
+                "Сигнал дней": 2,
+            }
+        ]
+    }
+    current = {
+        "positions": [
+            {
+                "Код ценной бумаги": "RU1",
+                "Название": "Bond 1",
+                "Рекомендация мониторинга": "НЕ ДОКУПАТЬ / ПРОВЕРИТЬ",
+                "Причины рекомендации": "Спред вырос",
+                "Динамика сигнала": "УСИЛИЛСЯ",
+                "Сигнал дней": 3,
+            }
+        ]
+    }
+    actions, changes = _monitor_actions(current, previous)
+    assert actions[0]["signal_days"] == 3
+    assert actions[0]["signal_trend"] == "УСИЛИЛСЯ"
+    assert len(changes) == 1
+    assert changes[0]["from"] == changes[0]["to"] == "НЕ ДОКУПАТЬ / ПРОВЕРИТЬ"
+    assert changes[0]["signal_trend"] == "УСИЛИЛСЯ"
+    assert changes[0]["signal_days"] == 3
 
 
 def test_monitor_actions_without_previous_change():
