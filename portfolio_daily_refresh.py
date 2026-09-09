@@ -100,6 +100,16 @@ def overlay_fresh_news(run_dir: Path, news_path: Path) -> Path | None:
     news = pd.read_excel(news_path, sheet_name="Новости")
     if "Код ценной бумаги" not in decisions.columns or "Код ценной бумаги" not in news.columns:
         return None
+
+    # Excel columns that contain only empty cells are inferred by pandas as
+    # float64 (NaN).  The daily overlay writes textual explanations into them,
+    # so make the mutable text columns explicitly object/string-compatible.
+    for column in ("Финальное решение", "Жёсткий стоп", "Блокеры"):
+        if column not in decisions.columns:
+            decisions[column] = pd.Series("", index=decisions.index, dtype="object")
+        else:
+            decisions[column] = decisions[column].astype("object")
+
     news_by = {str(row.get("Код ценной бумаги") or "").strip(): row for _, row in news.iterrows()}
     for idx, row in decisions.iterrows():
         secid = str(row.get("Код ценной бумаги") or "").strip()
