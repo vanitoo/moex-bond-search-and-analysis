@@ -22,6 +22,14 @@ def latest_analysis_dir(root: Path) -> Path | None:
     return max(candidates, key=lambda path: path.name) if candidates else None
 
 
+def _safe_name(value: str) -> str:
+    return "".join(ch if ch.isalnum() or ch in "._-" else "_" for ch in str(value).strip()) or "portfolio"
+
+
+def portfolio_monitor_dir(root: Path, portfolio: str) -> Path:
+    return root / "data" / "portfolio_monitor_runs" / _safe_name(portfolio)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Ежедневный автопилот анализа облигаций")
     parser.add_argument(
@@ -43,14 +51,18 @@ def main() -> None:
 
     root = Path(__file__).resolve().parent
     python = sys.executable
+    baseline_kind = "полный анализ"
     if args.run_dir:
         run_dir = Path(args.run_dir).expanduser().resolve()
+        baseline_kind = "указанная папка"
     elif args.mode == "full":
         run_dir = root / f"bond_{datetime.now():%Y_%m_%d}"
     else:
         run_dir = latest_analysis_dir(root)
         if run_dir is None:
-            raise SystemExit("Не найдена ни одна папка полного анализа bond_YYYY_MM_DD. Сначала выполните full.")
+            run_dir = portfolio_monitor_dir(root, args.portfolio)
+            run_dir.mkdir(parents=True, exist_ok=True)
+            baseline_kind = "автономный портфельный мониторинг"
 
     config = Path(args.config).expanduser().resolve()
     portfolio_dir = root / "data" / "virtual_portfolios"
@@ -70,9 +82,7 @@ def main() -> None:
             command.append("--refresh-ratings")
         _run(command, root)
     else:
-        if not run_dir.exists():
-            raise SystemExit(f"Папка анализа не найдена: {run_dir}. Сначала выполните full или укажите --run-dir.")
-
+        run_dir.mkdir(parents=True, exist_ok=True)
         if not args.skip_portfolio_refresh:
             _run([
                 python, str(root / "portfolio_daily_refresh.py"),
@@ -104,7 +114,7 @@ def main() -> None:
     print("\nАвтопилот завершён")
     print(f"Режим: {args.mode}")
     print(f"Портфель: {args.portfolio}")
-    print(f"Базовый полный анализ: {run_dir}")
+    print(f"База мониторинга ({baseline_kind}): {run_dir}")
 
 
 if __name__ == "__main__":
