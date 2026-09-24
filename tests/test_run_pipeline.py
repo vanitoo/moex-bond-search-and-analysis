@@ -5,6 +5,9 @@ from pathlib import Path
 import run_pipeline
 
 
+CONFIG = {"modules": {"credit": {}}}
+
+
 def test_stage_range_covers_every_configured_stage():
     assert run_pipeline.FIRST_STAGE == 1
     assert run_pipeline.LAST_STAGE == len(run_pipeline.STAGES)
@@ -21,14 +24,14 @@ def test_market_credit_and_ofz_stage_positions():
 def test_stage_specific_arguments():
     root = Path("/project")
 
-    assert run_pipeline.stage_arguments("3b_bonds_news.py", 0.1, root) == []
+    assert run_pipeline.stage_arguments("3b_bonds_news.py", 0.1, root, CONFIG) == []
     assert run_pipeline.stage_arguments(
-        "4b_bonds_purchase_volume.py", 0.1, root
+        "4b_bonds_purchase_volume.py", 0.1, root, CONFIG
     ) == ["--impact-share", "0.1"]
-    assert run_pipeline.stage_arguments("4c_bonds_ofz_spread.py", 0.1, root) == []
+    assert run_pipeline.stage_arguments("4c_bonds_ofz_spread.py", 0.1, root, CONFIG) == []
     assert run_pipeline.stage_arguments(
-        "7_bonds_credit_analysis.py", 0.1, root
-    ) == ["--data-dir", str(root / "data")]
+        "7_bonds_credit_analysis.py", 0.1, root, CONFIG
+    ) == ["--data-dir", str(root / "data"), "--financial-cache-days", "35", "--financial-workers", "3"]
 
 
 def test_credit_stage_uses_fresh_ratings_cache(tmp_path: Path):
@@ -38,13 +41,15 @@ def test_credit_stage_uses_fresh_ratings_cache(tmp_path: Path):
     ratings.write_bytes(b"not-empty")
 
     arguments = run_pipeline.stage_arguments(
-        "7_bonds_credit_analysis.py", 0.1, tmp_path
+        "7_bonds_credit_analysis.py", 0.1, tmp_path, CONFIG
     )
 
     assert arguments == [
         "--data-dir",
         str(data_dir),
         "--no-fetch-ratings",
+        "--financial-cache-days", "35",
+        "--financial-workers", "3",
     ]
 
 
@@ -58,10 +63,11 @@ def test_credit_stage_refresh_flag_ignores_cache(tmp_path: Path):
         "7_bonds_credit_analysis.py",
         0.1,
         tmp_path,
+        CONFIG,
         refresh_ratings=True,
     )
 
-    assert arguments == ["--data-dir", str(data_dir)]
+    assert arguments == ["--data-dir", str(data_dir), "--financial-cache-days", "35", "--financial-workers", "3"]
 
 
 def test_old_ratings_cache_is_not_reused(tmp_path: Path):
@@ -76,6 +82,7 @@ def test_old_ratings_cache_is_not_reused(tmp_path: Path):
         "7_bonds_credit_analysis.py",
         0.1,
         tmp_path,
+        CONFIG,
         ratings_cache_hours=24,
     )
 
