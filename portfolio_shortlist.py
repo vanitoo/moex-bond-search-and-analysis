@@ -173,21 +173,26 @@ def build_shortlist(
             _unique_issuers(fallback, min(max_size - len(selected), min_size - len(selected)), used)
         )
 
+    def nullable_float(value: Any) -> float | None:
+        if value is None or pd.isna(value):
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
     def clean_row(row: pd.Series) -> dict[str, Any]:
         return {
             "secid": _text(row.get("Код ценной бумаги")),
             "name": _text(row.get("Полное наименование")),
             "issuer": _text(row.get("Эмитент")),
             "score": _score(row.get("Финальный балл")),
-            "yield": None if pd.isna(row.get("Доходность")) else row.get("Доходность"),
+            "yield": nullable_float(row.get("Доходность")),
             "rating": _text(row.get("Рейтинг")),
             "tier": _text(row.get("Уровень рекомендации")),
             "confidence": _text(row.get("Уверенность решения")),
             "max_share": _text(row.get("Максимальная доля")),
-            "max_purchase_rub": (
-                None if pd.isna(row.get("Максимум к покупке, руб."))
-                else row.get("Максимум к покупке, руб.")
-            ),
+            "max_purchase_rub": nullable_float(row.get("Максимум к покупке, руб.")),
             "warnings": _text(row.get("Предупреждения")),
             "credit_missing": _text(row.get("Недостающие кредитные данные")),
         }
