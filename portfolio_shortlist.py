@@ -67,11 +67,12 @@ def recommendation_tier(row: pd.Series) -> str:
     decision = _text(row.get("Финальное решение")).lower()
     blockers = _text(row.get("Блокеры"))
     credit_missing = _text(row.get("Недостающие кредитные данные")).lower().replace("ё", "е")
+    has_credit_gaps = bool(credit_missing and credit_missing not in {"—", "-", "нет"})
 
     if "не покупать" in decision or (blockers and blockers != "—") or score < 50:
         return "НЕ ПОКУПАТЬ"
     if score >= STRONG_SCORE:
-        if "финансовая отчетность" in credit_missing:
+        if has_credit_gaps:
             return "РЕКОМЕНДОВАТЬ, НО ДАННЫЕ НЕПОЛНЫЕ"
         return "РЕКОМЕНДОВАТЬ"
     if score >= ADMITTED_SCORE:
@@ -86,7 +87,7 @@ def decision_confidence(row: pd.Series) -> str:
     completeness = _text(row.get("Полнота оценки")).lower()
     if "кредитный рейтинг" in credit_missing or "credit" in completeness:
         return "Низкая"
-    if "финансовая отчетность" in credit_missing:
+    if credit_missing and credit_missing not in {"—", "-", "нет"}:
         return "Средняя"
     if "неполная" in completeness:
         return "Средняя"
