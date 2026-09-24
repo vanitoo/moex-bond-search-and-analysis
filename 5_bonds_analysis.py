@@ -12,6 +12,23 @@ from pipeline_common import clean_secid_rows, latest, merge_by_secid, safe_float
 REQUIRED = {"Полное наименование", "Код ценной бумаги", "Нужна квалификация?", "Цена, %", "Объем сделок с 15 дней, шт.", "Доходность", "Дюрация, месяцев"}
 
 
+def normalize_search_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalize V1/V2 search-column aliases to the analysis contract."""
+    df = df.copy()
+    aliases = {
+        "Нужна квалификация?": ["Для квалифицированных инвесторов"],
+        "Объем сделок с 15 дней, шт.": ["Объем за 15 дней, шт.", "Объем торгов за 15 дней"],
+    }
+    for canonical, alternatives in aliases.items():
+        if canonical in df.columns:
+            continue
+        for alternative in alternatives:
+            if alternative in df.columns:
+                df[canonical] = df[alternative]
+                break
+    return df
+
+
 def yes(value: Any) -> bool:
     return str(value or "").strip().lower() in {"да", "yes", "true", "1"}
 
@@ -115,6 +132,7 @@ def main() -> None:
     root = Path(".")
     source = Path(args.input) if args.input else latest(root, "bond_search_*.xlsx")
     df = clean_secid_rows(pd.read_excel(source, sheet_name="Результаты поиска"))
+    df = normalize_search_columns(df)
     missing = REQUIRED.difference(df.columns)
     if missing:
         raise ValueError("Нет колонок: " + ", ".join(sorted(missing)))
