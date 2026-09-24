@@ -121,6 +121,12 @@ def stage_arguments(script_name: str, impact_share: float, project_root: Path, c
         ratings_path = project_root / "data" / "issuer_ratings.xlsx"
         if not refresh_ratings and ratings_cache_is_fresh(ratings_path, ratings_cache_hours):
             arguments.append("--no-fetch-ratings")
+        if settings.get("fetch_financials", True) is False:
+            arguments.append("--no-fetch-financials")
+        arguments += [
+            "--financial-cache-days", str(settings.get("financial_cache_days", 35)),
+            "--financial-workers", str(settings.get("financial_workers", 3)),
+        ]
         return arguments
     if script_name == "8_bonds_decision.py":
         actual = config_path or (project_root / "configs" / "balanced.json")
