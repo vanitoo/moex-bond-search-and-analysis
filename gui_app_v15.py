@@ -213,6 +213,59 @@ def render_income_analytics() -> None:
         st.warning("Не удалось обновить часть бумаг: " + "; ".join(payload["errors"]))
 
 
+def render_model_shortlist(run_dir: Path) -> None:
+    path = run_dir / "decisions" / "portfolio_shortlist.json"
+    if not path.exists():
+        st.info("Финальный shortlist модели ещё не сформирован. Перезапустите финальные этапы анализа.")
+        return
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        st.warning(f"Не удалось прочитать shortlist: {exc}")
+        return
+
+    st.markdown("### Финальный shortlist модели")
+    st.caption(
+        "Сильные кандидаты сначала ранжируются, затем остаётся максимум один лучший выпуск каждого эмитента. "
+        "Если сильных уникальных эмитентов меньше восьми, список дополняется бумагами уровня «Допустить к покупке»."
+    )
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Проанализировано", payload.get("analyzed", 0))
+    m2.metric("Допущено", payload.get("admitted", 0))
+    m3.metric("Сильных", payload.get("strong", 0))
+    m4.metric("В shortlist", payload.get("shortlist_count", 0))
+
+    rows = payload.get("shortlist", [])
+    if rows:
+        frame = pd.DataFrame(rows).rename(columns={
+            "secid": "SECID",
+            "name": "Название",
+            "issuer": "Эмитент",
+            "score": "Баллы",
+            "yield": "YTM, %",
+            "rating": "Рейтинг",
+            "tier": "Уровень",
+            "confidence": "Уверенность",
+            "max_purchase_rub": "Лимит покупки, ₽",
+        })
+        columns = [
+            "SECID", "Название", "Эмитент", "Баллы", "YTM, %", "Рейтинг",
+            "Уровень", "Уверенность", "Лимит покупки, ₽",
+        ]
+        st.dataframe(frame[[col for col in columns if col in frame.columns]], width="stretch", hide_index=True)
+        if st.button("Сохранить shortlist как мой набор кандидатов", key="save_model_shortlist_v15"):
+            base.save_candidates(run_dir, [str(item.get("secid")) for item in rows if item.get("secid")])
+            st.success("Shortlist сохранён как ваш набор кандидатов. Его можно менять вручную ниже.")
+            st.rerun()
+    else:
+        st.warning("Shortlist пуст: ни одна бумага не прошла текущие пороги.")
+
+    strong = payload.get("strong_candidates", [])
+    if strong:
+        with st.expander(f"Все сильные кандидаты до удаления дублей эмитентов · {len(strong)}"):
+            st.dataframe(pd.DataFrame(strong), width="stretch", hide_index=True)
+
+
 def _render_existing_tabs(run_dir: Path, config: dict, is_today: bool) -> None:
     tabs = st.tabs(v10.TAB_NAMES)
     with tabs[0]:
@@ -223,6 +276,8 @@ def _render_existing_tabs(run_dir: Path, config: dict, is_today: bool) -> None:
         base.render_bonds(run_dir)
         v12.render_bond_journey(run_dir)
     with tabs[3]:
+        render_model_shortlist(run_dir)
+        st.markdown("---")
         v6.render_candidates(run_dir)
     with tabs[4]:
         v4.render_portfolio(run_dir)
