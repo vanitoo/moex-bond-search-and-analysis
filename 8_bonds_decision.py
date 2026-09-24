@@ -17,6 +17,7 @@ sys.path.insert(0, str(SRC))
 from pipeline_architecture import is_enabled, load_config
 from pipeline_common import clean_secid_rows, latest, merge_by_secid, safe_float
 from moex_bond_search_and_analysis.rating_signal import build_rating_signal, load_rating_events
+from portfolio_shortlist import annotate_decisions, write_shortlist
 
 RATING_ORDER = ["D", "C", "CC", "CCC", "B-", "B", "B+", "BB-", "BB", "BB+", "BBB-", "BBB", "BBB+", "A-", "A", "A+", "AA-", "AA", "AA+", "AAA"]
 CRITICAL = ("дефолт", "просроч", "банкрот", "не покрывает процент", "отрицательный операционный")
@@ -109,6 +110,7 @@ def decide(row: pd.Series, enabled: set[str], source_name: str, rating_events: l
 
     secid = str(row.get("Код ценной бумаги") or "").strip().upper()
     current_rating = rating(row.get("Рейтинг"))
+    credit_missing = str(row.get("Недостающие данные") or "").strip()
     risks = normalize(row.get("Риски") or row.get("Риски и ограничения"))
     if "credit" in enabled:
         if current_rating in {"D", "C", "CC", "CCC"}:
@@ -183,6 +185,8 @@ def decide(row: pd.Series, enabled: set[str], source_name: str, rating_events: l
     return {
         "Полное наименование": row.get("Полное наименование"),
         "Код ценной бумаги": row.get("Код ценной бумаги"),
+        "Эмитент": row.get("Эмитент"),
+        "ИНН": row.get("ИНН"),
         "Доходность": row.get("Доходность"),
         "Финальное решение": decision,
         "Допущена в портфель": "ДА" if eligible else "НЕТ",
@@ -204,6 +208,7 @@ def decide(row: pd.Series, enabled: set[str], source_name: str, rating_events: l
         "Отключённые модули": "; ".join(disabled) or "—",
         "Модули без данных": "; ".join(sorted(set(no_data))) or "—",
         "Полнота оценки": completeness,
+        "Недостающие кредитные данные": credit_missing or "—",
         "Базовый источник": source_name,
     }
 
@@ -235,6 +240,7 @@ def main() -> None:
             df = merge_by_secid(df, load_optional(root, pattern, sheet))
 
     result = pd.DataFrame([decide(row, enabled, source_name, rating_events) for _, row in df.iterrows()])
+    result = annotate_decisions(result)
     result = result.sort_values(["Допущена в портфель", "Финальный балл"], ascending=[False, False])
     candidates = result[result["Допущена в портфель"] == "ДА"].copy()
 
@@ -249,9 +255,24 @@ def main() -> None:
         pd.DataFrame({"Параметр": ["Стратегия", "Включённые модули", "Базовый источник", "Рейтинговых событий"], "Значение": [config.get("strategy"), ", ".join(sorted(enabled)), source_name, len(rating_events)]}).to_excel(writer, sheet_name="Конфигурация", index=False)
     html.write_text(result.to_html(index=False), encoding="utf-8")
     json_path.write_text(json.dumps(candidates.to_dict(orient="records"), ensure_ascii=False, indent=2), encoding="utf-8")
+    shortlist = write_shortlist(result, out, stamp)
+    shortlist_ids = set(item["secid"] for item in shortlist["shortlist"])
+    result["В финальном shortlist"] = result["Код ценной бумаги"].astype(str).isin(shortlist_ids).map({True: "ДА", False: "НЕТ"})
+    candidates["В финальном shortlist"] = candidates["Код ценной бумаги"].astype(str).isin(shortlist_ids).map({True: "ДА", False: "НЕТ"})
+    # Перезаписываем Excel/HTML уже с отметкой shortlist.
+    with pd.ExcelWriter(xlsx, engine="openpyxl") as writer:
+        result.to_excel(writer, sheet_name="Решения", index=False)
+        candidates.to_excel(writer, sheet_name="Кандидаты в портфель", index=False)
+        pd.DataFrame({"Параметр": ["Стратегия", "Включённые модули", "Базовый источник", "Рейтинговых событий"], "Значение": [config.get("strategy"), ", ".join(sorted(enabled)), source_name, len(rating_events)]}).to_excel(writer, sheet_name="Конфигурация", index=False)
+    html.write_text(result.to_html(index=False), encoding="utf-8")
     print(f"Обработано уникальных SECID: {len(result)}")
     print(f"Учтено рейтинговых событий: {len(rating_events)}")
-    print(xlsx); print(html); print(json_path)
+    print(f"Допущено к покупке: {shortlist['admitted']}")
+    print(f"Сильных кандидатов (балл >= {shortlist['thresholds']['strong_score']}): {shortlist['strong']}")
+    print(f"Финальный shortlist по разным эмитентам: {shortlist['shortlist_count']}")
+    for item in shortlist["shortlist"]:
+        print(f"  {item['secid']}: {item['name']} — {item['score']:.0f}, {item['rating'] or 'без рейтинга'}")
+    print(xlsx); print(html); print(json_path); print(shortlist["json_path"]); print(shortlist["xlsx_path"])
 
 
 if __name__ == "__main__":
