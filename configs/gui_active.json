@@ -8,16 +8,19 @@
     "market_search": {
       "enabled": true,
       "mode": "hard_filter",
-      "yield_more": 15.0,
-      "price_more": 70.0,
-      "duration_more": 3.0,
-      "volume_more": 2000.0,
+      "yield_more": 10.0,
+      "price_more": 60.0,
+      "duration_more": 2.0,
+      "volume_more": 500.0,
       "yield_less": 40.0,
-      "price_less": 120.0,
-      "duration_less": 18.0,
-      "bond_volume_more": 60000.0,
-      "require_known_coupons": true,
-      "version": "v1"
+      "price_less": 130.0,
+      "duration_less": 30.0,
+      "bond_volume_more": 30000.0,
+      "require_known_coupons": false,
+      "version": "v2",
+      "workers": 5,
+      "cache_hours": 12.0,
+      "selection_profile": "soft_balanced"
     },
     "cashflow": {
       "enabled": true,
@@ -27,7 +30,12 @@
     "news_search": {
       "enabled": true,
       "mode": "information",
-      "providers": ["google", "moex", "acra", "expert_ra"],
+      "providers": [
+        "google",
+        "moex",
+        "acra",
+        "expert_ra"
+      ],
       "proxy_enabled": false,
       "proxy_env": "NEWS_PROXY",
       "minimum_successful_providers": 1
