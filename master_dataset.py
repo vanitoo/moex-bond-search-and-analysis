@@ -172,19 +172,27 @@ def normalized_blocks(raw_modules: dict[str, dict[str, Any]]) -> dict[str, Any]:
             "recommendation": first(deep, "Рекомендация", "Решение", "Итог"),
         },
         "credit": {
+            "issuer": first(credit, "Эмитент", "Название эмитента", "Наименование эмитента"),
+            "inn": first(credit, "ИНН"),
             "rating": first(credit, "Рейтинг", "Кредитный рейтинг"),
             "agency": first(credit, "Рейтинговое агентство", "Агентство"),
             "score": as_float(first(credit, "Кредитный балл", "Итоговый кредитный балл", "Оценка кредитного риска")),
+            "financial_score": as_float(first(credit, "Баллы финансов")),
+            "confidence": first(credit, "Уверенность"),
             "missing_data": first(credit, "Недостающие данные"),
         },
         "decision": {
             "score": as_float(first(decision, "Финальный балл", "Итоговый балл", "Оценка")),
             "status": first(decision, "Финальное решение", "Решение"),
+            "tier": first(decision, "Уровень рекомендации"),
+            "confidence": first(decision, "Уверенность решения"),
+            "shortlist": as_bool_text(first(decision, "В финальном shortlist")),
             "admitted": as_bool_text(first(decision, "Допущена в портфель")),
             "max_share_percent": as_float(first(decision, "Максимальная доля, %", "Максимальная доля")),
             "reasons": first(decision, "Причины"),
             "blockers": first(decision, "Блокеры"),
             "completeness": first(decision, "Полнота оценки"),
+            "credit_missing": first(decision, "Недостающие кредитные данные"),
         },
     }
 
