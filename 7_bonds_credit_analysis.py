@@ -403,6 +403,12 @@ def build_analysis(deep: pd.DataFrame, ratings: pd.DataFrame, financials: pd.Dat
         rows.append({
             "Полное наименование": name,
             "Код ценной бумаги": secid,
+            "Эмитент": (
+                "" if rating is None else rating.get("Эмитент")
+            ) or ("" if fin is None else fin.get("Эмитент")) or "",
+            "ИНН": (
+                "" if rating is None else rating.get("ИНН")
+            ) or ("" if fin is None else fin.get("ИНН")) or "",
             "Доходность": source.get("Доходность"),
             "Баллы второго слоя": source.get("Итоговый балл"),
             "Решение второго слоя": source.get("Решение"),
