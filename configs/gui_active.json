@@ -8,18 +8,18 @@
     "market_search": {
       "enabled": true,
       "mode": "hard_filter",
-      "yield_more": 10.0,
-      "price_more": 60.0,
-      "duration_more": 2.0,
-      "volume_more": 500.0,
-      "yield_less": 40.0,
-      "price_less": 130.0,
-      "duration_less": 30.0,
-      "bond_volume_more": 30000.0,
+      "yield_more": 10,
+      "price_more": 60,
+      "duration_more": 2,
+      "volume_more": 500,
+      "yield_less": 40,
+      "price_less": 130,
+      "duration_less": 30,
+      "bond_volume_more": 30000,
       "require_known_coupons": false,
       "version": "v2",
       "workers": 5,
-      "cache_hours": 12.0,
+      "cache_hours": 12,
       "selection_profile": "soft_balanced"
     },
     "cashflow": {
@@ -66,7 +66,10 @@
     "credit": {
       "enabled": true,
       "mode": "hard_filter",
-      "minimum_rating": "BBB-"
+      "minimum_rating": "BBB-",
+      "fetch_financials": true,
+      "financial_cache_days": 35,
+      "financial_workers": 3
     },
     "decision": {
       "enabled": true,
