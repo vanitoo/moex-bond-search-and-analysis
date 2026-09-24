@@ -33,6 +33,12 @@ from moex_bond_search_and_analysis.ratings import (
     fetch_expert_ra_ratings,
     merge_rating_rows,
 )
+from moex_bond_search_and_analysis.financials import (
+    DEFAULT_CACHE_DAYS,
+    DEFAULT_WORKERS,
+    fetch_financials_for_inns,
+    merge_financial_rows,
+)
 
 
 RATING_TEMPLATE_COLUMNS = [
@@ -512,6 +518,23 @@ def main() -> int:
         action="store_true",
         help="Не обновлять рейтинги с официального сайта «Эксперт РА»",
     )
+    parser.add_argument(
+        "--no-fetch-financials",
+        action="store_true",
+        help="Не обновлять финансовые показатели из публичного ГИР БО ФНС",
+    )
+    parser.add_argument(
+        "--financial-cache-days",
+        type=int,
+        default=DEFAULT_CACHE_DAYS,
+        help="Сколько дней считать кэш финансов ГИР БО свежим",
+    )
+    parser.add_argument(
+        "--financial-workers",
+        type=int,
+        default=DEFAULT_WORKERS,
+        help="Параллельные запросы к ГИР БО ФНС (1–4)",
+    )
     args = parser.parse_args()
     try:
         source = args.input or find_latest_deep_file(Path.cwd())
@@ -541,6 +564,39 @@ def main() -> int:
                 "Внимание: ИНН не найден для: "
                 + ", ".join(identity_failures)
             )
+
+        if not args.no_fetch_financials:
+            try:
+                cache_dir = args.data_dir / "financial_cache" / "fns_bfo"
+                fetched_financials, financial_stats = fetch_financials_for_inns(
+                    deep.get("ИНН", pd.Series(dtype=str)).tolist(),
+                    cache_dir=cache_dir,
+                    cache_days=max(0, args.financial_cache_days),
+                    workers=max(1, min(args.financial_workers, 4)),
+                )
+                financials = merge_financial_rows(financials, fetched_financials)
+                financials.to_excel(financials_path, index=False)
+                print(
+                    "Финансы ГИР БО ФНС: "
+                    f"запрошено ИНН {financial_stats.requested}, "
+                    f"получено {financial_stats.fetched}, "
+                    f"из кэша {financial_stats.cached}, "
+                    f"нет отчётности {financial_stats.not_found}, "
+                    f"ошибок {len(financial_stats.errors)}. "
+                    f"Кэш: {financials_path}"
+                )
+                if financial_stats.errors:
+                    print(
+                        "Внимание: часть финансовых данных получить не удалось: "
+                        + "; ".join(financial_stats.errors[:10])
+                        + ("; ..." if len(financial_stats.errors) > 10 else "")
+                    )
+            except (OSError, ValueError, RuntimeError, requests.RequestException) as exc:
+                print(
+                    f"Внимание: автоматическое обновление финансов ГИР БО не удалось: {exc}. "
+                    "Используется существующий локальный файл."
+                )
+
         result = build_analysis(deep, ratings, financials)
         stamp = datetime.now().strftime("%Y-%m-%d")
         excel = Path(f"bond_credit_analysis_{stamp}.xlsx")
@@ -556,8 +612,9 @@ def main() -> int:
             )
         if financials.empty:
             print(
-                f"Внимание: финансовые данные отсутствуют. Заполните "
-                f"{financials_path} и запустите повторно."
+                f"Внимание: финансовые данные отсутствуют. ГИР БО мог не вернуть отчётность "
+                f"(например, для банков/части финансовых организаций или при ограничении доступа). "
+                f"Ручной fallback: {financials_path}."
             )
         return 0
     except Exception as exc:
