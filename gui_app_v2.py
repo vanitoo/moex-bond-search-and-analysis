@@ -170,6 +170,28 @@ def config_editor() -> dict[str, Any]:
                             value=float(settings.get("cache_hours", 12)), step=1.0, key="market_v2_cache_hours",
                         )
                         st.warning("V2 экспериментальный. V1 и V2 получают абсолютно одинаковые критерии поиска.")
+                if key == "credit":
+                    settings["fetch_financials"] = st.toggle(
+                        "Автоматически получать финансовые данные из ГИР БО ФНС",
+                        value=bool(settings.get("fetch_financials", True)),
+                        key="credit_fetch_financials",
+                    )
+                    if settings["fetch_financials"]:
+                        f1, f2 = st.columns(2)
+                        settings["financial_cache_days"] = int(f1.number_input(
+                            "Кэш финансов, дней", min_value=0, max_value=365,
+                            value=int(settings.get("financial_cache_days", 35)), step=1,
+                            key="credit_financial_cache_days",
+                        ))
+                        settings["financial_workers"] = int(f2.slider(
+                            "Параллельных запросов ФНС", min_value=1, max_value=4,
+                            value=int(settings.get("financial_workers", 3)),
+                            key="credit_financial_workers",
+                        ))
+                        st.caption(
+                            "Источник — публичный ГИР БО ФНС. Для банков и части финансовых организаций "
+                            "данные могут отсутствовать; такие позиции остаются с пониженной уверенностью."
+                        )
         if st.button("Сохранить профиль модулей", use_container_width=True):
             st.success(f"Сохранено: {save_gui_config(config).relative_to(PROJECT_ROOT)}")
     return config
