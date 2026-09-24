@@ -86,4 +86,21 @@ def test_old_ratings_cache_is_not_reused(tmp_path: Path):
         ratings_cache_hours=24,
     )
 
-    assert arguments == ["--data-dir", str(data_dir)]
+    assert arguments == ["--data-dir", str(data_dir), "--financial-cache-days", "35", "--financial-workers", "3"]
+
+
+def test_credit_stage_can_disable_financial_fetch(tmp_path: Path):
+    config = {"modules": {"credit": {"fetch_financials": False, "financial_cache_days": 60, "financial_workers": 2}}}
+    arguments = run_pipeline.stage_arguments(
+        "7_bonds_credit_analysis.py",
+        0.1,
+        tmp_path,
+        config,
+        refresh_ratings=True,
+    )
+    assert arguments == [
+        "--data-dir", str(tmp_path / "data"),
+        "--no-fetch-financials",
+        "--financial-cache-days", "60",
+        "--financial-workers", "2",
+    ]
