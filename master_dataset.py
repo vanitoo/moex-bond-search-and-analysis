@@ -178,6 +178,8 @@ def normalized_blocks(raw_modules: dict[str, dict[str, Any]]) -> dict[str, Any]:
             "agency": first(credit, "Рейтинговое агентство", "Агентство"),
             "score": as_float(first(credit, "Кредитный балл", "Итоговый кредитный балл", "Оценка кредитного риска")),
             "financial_score": as_float(first(credit, "Баллы финансов")),
+            "financial_period": first(credit, "Период отчётности"),
+            "financial_source": first(credit, "Источник финансов"),
             "confidence": first(credit, "Уверенность"),
             "missing_data": first(credit, "Недостающие данные"),
         },
