@@ -51,9 +51,12 @@ def _confidence_rank(value: Any) -> int:
 
 
 def _issuer_key(row: pd.Series) -> str:
+    inn = _text(row.get("ИНН")).replace(" ", "")
+    if inn and inn.lower() not in {"nan", "none"}:
+        return f"inn:{inn}"
     issuer = _text(row.get("Эмитент"))
     if issuer:
-        return issuer.casefold()
+        return f"issuer:{issuer.casefold()}"
     # Без эмитента не склеиваем разные выпуски эвристикой по названию:
     # безопаснее считать такой SECID отдельным эмитентом.
     return f"secid:{_text(row.get('Код ценной бумаги')).upper()}"
@@ -186,6 +189,7 @@ def build_shortlist(
             "secid": _text(row.get("Код ценной бумаги")),
             "name": _text(row.get("Полное наименование")),
             "issuer": _text(row.get("Эмитент")),
+            "inn": _text(row.get("ИНН")),
             "score": _score(row.get("Финальный балл")),
             "yield": nullable_float(row.get("Доходность")),
             "rating": _text(row.get("Рейтинг")),
