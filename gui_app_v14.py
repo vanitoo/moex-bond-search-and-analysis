@@ -16,6 +16,7 @@ import gui_app_v12 as v12
 import gui_app_v13 as v13
 from portfolio_allocator import allocate_budget
 from portfolio_plan import apply_allocation_plan, recalculate_allocation_plan
+from portfolio_shortlist import load_shortlist_secids
 from portfolio_store import list_portfolios, load_portfolio, save_portfolio
 
 
@@ -42,8 +43,20 @@ def render_buy_plan(run_dir: Path) -> None:
         st.info("Сначала создайте виртуальный портфель.")
         return
 
-    shortlist = [secid for secid in base.saved_candidates(run_dir) if secid in by_secid]
+    manual_shortlist = [secid for secid in base.saved_candidates(run_dir) if secid in by_secid]
+    model_shortlist = [secid for secid in load_shortlist_secids(run_dir) if secid in by_secid]
+    shortlist = manual_shortlist or model_shortlist
     candidates = shortlist or list(by_secid)
+
+    if manual_shortlist:
+        st.info(f"Источник списка: ваш сохранённый набор кандидатов · {len(manual_shortlist)} бумаг.")
+    elif model_shortlist:
+        st.info(
+            f"Источник списка: финальный shortlist модели · {len(model_shortlist)} бумаг, "
+            "по одному сильнейшему выпуску на эмитента. Можно включить «Все кандидаты» и выбрать любые бумаги вручную."
+        )
+    else:
+        st.caption("Финальный shortlist ещё не сформирован — показаны бумаги из текущего master.")
 
     c1, c2, c3 = st.columns([2, 1, 1])
     portfolio_name = c1.selectbox("Портфель", list(portfolios), key="buy_plan_portfolio_v14")
@@ -57,10 +70,17 @@ def render_buy_plan(run_dir: Path) -> None:
         bond = by_secid[secid]
         decision = str(base.deep_get(bond, "decision.status") or "")
         score = base.deep_get(bond, "decision.score")
+        tier = str(base.deep_get(bond, "decision.tier") or "")
+        confidence = str(base.deep_get(bond, "decision.confidence") or "")
+        issuer = str(base.deep_get(bond, "credit.issuer") or "")
+        default_selected = secid in shortlist if shortlist else decision.lower() not in {"не покупать", "ожидает данных"}
         rows.append({
-            "Выбрать": decision.lower() not in {"не покупать", "ожидает данных"},
+            "Выбрать": default_selected,
             "SECID": secid,
             "Название": bond.get("name") or secid,
+            "Эмитент": issuer or "—",
+            "Уровень": tier or "—",
+            "Уверенность": confidence or "—",
             "Решение": decision or "—",
             "Баллы": score,
             "YTM, %": base.deep_get(bond, "market.yield"),
@@ -71,7 +91,7 @@ def render_buy_plan(run_dir: Path) -> None:
         pd.DataFrame(rows),
         width="stretch",
         hide_index=True,
-        disabled=["SECID", "Название", "Решение", "Баллы", "YTM, %", "Рейтинг"],
+        disabled=["SECID", "Название", "Эмитент", "Уровень", "Уверенность", "Решение", "Баллы", "YTM, %", "Рейтинг"],
         key="buy_plan_selector_v14",
     )
     selected = edited.loc[edited["Выбрать"] == True, "SECID"].astype(str).tolist() if not edited.empty else []
