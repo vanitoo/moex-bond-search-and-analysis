@@ -31,7 +31,7 @@ def test_stage_specific_arguments():
     assert run_pipeline.stage_arguments("4c_bonds_ofz_spread.py", 0.1, root, CONFIG) == []
     assert run_pipeline.stage_arguments(
         "7_bonds_credit_analysis.py", 0.1, root, CONFIG
-    ) == ["--data-dir", str(root / "data"), "--financial-cache-days", "35", "--financial-workers", "3"]
+    ) == ["--data-dir", str(root / "data"), "--financial-cache-days", "35", "--financial-workers", "1", "--financial-delay-seconds", "1.2", "--financial-retries", "4"]
 
 
 def test_credit_stage_uses_fresh_ratings_cache(tmp_path: Path):
@@ -49,7 +49,9 @@ def test_credit_stage_uses_fresh_ratings_cache(tmp_path: Path):
         str(data_dir),
         "--no-fetch-ratings",
         "--financial-cache-days", "35",
-        "--financial-workers", "3",
+        "--financial-workers", "1",
+        "--financial-delay-seconds", "1.2",
+        "--financial-retries", "4",
     ]
 
 
@@ -67,7 +69,7 @@ def test_credit_stage_refresh_flag_ignores_cache(tmp_path: Path):
         refresh_ratings=True,
     )
 
-    assert arguments == ["--data-dir", str(data_dir), "--financial-cache-days", "35", "--financial-workers", "3"]
+    assert arguments == ["--data-dir", str(data_dir), "--financial-cache-days", "35", "--financial-workers", "1", "--financial-delay-seconds", "1.2", "--financial-retries", "4"]
 
 
 def test_old_ratings_cache_is_not_reused(tmp_path: Path):
@@ -103,4 +105,6 @@ def test_credit_stage_can_disable_financial_fetch(tmp_path: Path):
         "--no-fetch-financials",
         "--financial-cache-days", "60",
         "--financial-workers", "2",
+        "--financial-delay-seconds", "1.2",
+        "--financial-retries", "4",
     ]
