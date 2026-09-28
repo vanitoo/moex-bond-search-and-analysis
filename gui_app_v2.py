@@ -185,8 +185,19 @@ def config_editor() -> dict[str, Any]:
                         ))
                         settings["financial_workers"] = int(f2.slider(
                             "Параллельных запросов ФНС", min_value=1, max_value=4,
-                            value=int(settings.get("financial_workers", 3)),
+                            value=int(settings.get("financial_workers", 1)),
                             key="credit_financial_workers",
+                        ))
+                        f3, f4 = st.columns(2)
+                        settings["financial_delay_seconds"] = float(f3.number_input(
+                            "Пауза между запросами ФНС, сек.", min_value=0.0, max_value=10.0,
+                            value=float(settings.get("financial_delay_seconds", 1.2)), step=0.2,
+                            key="credit_financial_delay_seconds",
+                        ))
+                        settings["financial_retries"] = int(f4.slider(
+                            "Повторов запроса ФНС", min_value=1, max_value=8,
+                            value=int(settings.get("financial_retries", 4)),
+                            key="credit_financial_retries",
                         ))
                         st.caption(
                             "Источник — публичный ГИР БО ФНС. Для банков и части финансовых организаций "
