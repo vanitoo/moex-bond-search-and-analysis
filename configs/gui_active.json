@@ -69,7 +69,9 @@
       "minimum_rating": "BBB-",
       "fetch_financials": true,
       "financial_cache_days": 35,
-      "financial_workers": 3
+      "financial_workers": 1,
+      "financial_delay_seconds": 1.2,
+      "financial_retries": 4
     },
     "decision": {
       "enabled": true,
