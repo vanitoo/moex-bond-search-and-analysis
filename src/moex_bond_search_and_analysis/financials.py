@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import re
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -13,13 +15,15 @@ import requests
 
 from moex_bond_search_and_analysis.http_client import browser_headers, browser_session
 
-FNS_BASES = (
-    "https://bo.nalog.gov.ru",
-    "https://bo.nalog.ru",
-)
+FNS_BASES = ("https://bo.nalog.gov.ru",)
 FNS_TIMEOUT = 30
 DEFAULT_CACHE_DAYS = 35
-DEFAULT_WORKERS = 3
+DEFAULT_WORKERS = 1
+DEFAULT_DELAY_SECONDS = 1.2
+DEFAULT_RETRIES = 4
+_RETRYABLE_STATUS = {403, 408, 425, 429, 500, 502, 503, 504}
+_RATE_LOCK = threading.Lock()
+_NEXT_REQUEST_AT = 0.0
 
 FINANCIAL_COLUMNS = [
     "Код ценной бумаги", "Эмитент", "ИНН", "Период", "Валюта",
@@ -224,10 +228,76 @@ def _save_cache(cache_dir: Path, inn: str, row: dict[str, Any]) -> None:
     )
 
 
+def _paced_get(
+    client: requests.Session,
+    url: str,
+    *,
+    params: dict[str, Any] | None = None,
+    delay_seconds: float = DEFAULT_DELAY_SECONDS,
+    retries: int = DEFAULT_RETRIES,
+) -> requests.Response:
+    """GET с общим rate-limit, retry/backoff и понятной диагностикой JSON API ФНС."""
+    global _NEXT_REQUEST_AT
+
+    last_error: Exception | None = None
+    attempts = max(1, int(retries))
+    for attempt in range(attempts):
+        with _RATE_LOCK:
+            now = time.monotonic()
+            wait = max(0.0, _NEXT_REQUEST_AT - now)
+            if wait:
+                time.sleep(wait)
+            _NEXT_REQUEST_AT = time.monotonic() + max(0.0, float(delay_seconds))
+
+        try:
+            response = client.get(url, params=params, timeout=FNS_TIMEOUT)
+            if response.status_code in _RETRYABLE_STATUS:
+                retry_after = response.headers.get("Retry-After")
+                try:
+                    sleep_for = float(retry_after) if retry_after else 0.0
+                except ValueError:
+                    sleep_for = 0.0
+                sleep_for = max(sleep_for, min(20.0, 1.5 * (2 ** attempt)))
+                last_error = RuntimeError(
+                    f"HTTP {response.status_code} от ГИР БО; повтор через {sleep_for:.1f} с"
+                )
+                if attempt + 1 < attempts:
+                    time.sleep(sleep_for)
+                    continue
+            response.raise_for_status()
+            return response
+        except requests.RequestException as exc:
+            last_error = exc
+            if attempt + 1 < attempts:
+                time.sleep(min(20.0, 1.5 * (2 ** attempt)))
+                continue
+            raise
+
+    if last_error:
+        raise RuntimeError(str(last_error))
+    raise RuntimeError("Не удалось выполнить запрос ГИР БО")
+
+
+def _json_payload(response: requests.Response, *, label: str) -> Any:
+    try:
+        return response.json()
+    except ValueError as exc:
+        content_type = response.headers.get("Content-Type", "")
+        preview = (response.text or "").strip().replace("\n", " ")[:160]
+        raise RuntimeError(
+            f"{label}: ГИР БО вернул не JSON "
+            f"(HTTP {response.status_code}, {content_type or 'без Content-Type'}"
+            + (f", начало ответа: {preview!r}" if preview else ", пустой ответ")
+            + ")"
+        ) from exc
+
+
 def fetch_fns_financials(
     inn: str,
     *,
     session: requests.Session | None = None,
+    delay_seconds: float = DEFAULT_DELAY_SECONDS,
+    retries: int = DEFAULT_RETRIES,
 ) -> dict[str, Any] | None:
     inn = re.sub(r"\D", "", str(inn or ""))
     if len(inn) != 10:
@@ -242,28 +312,33 @@ def fetch_fns_financials(
     last_error: Exception | None = None
     for base in FNS_BASES:
         try:
-            search_response = client.get(
+            search_response = _paced_get(
+                client,
                 f"{base}/advanced-search/organizations/search",
                 params={"query": inn, "page": 0, "size": 20},
-                timeout=FNS_TIMEOUT,
+                delay_seconds=delay_seconds,
+                retries=retries,
             )
-            search_response.raise_for_status()
-            org_id, search_item = _find_org_id(search_response.json(), inn)
+            org_id, search_item = _find_org_id(
+                _json_payload(search_response, label=f"поиск ИНН {inn}"),
+                inn,
+            )
             if not org_id:
                 continue
-            bfo_response = client.get(
+            bfo_response = _paced_get(
+                client,
                 f"{base}/nbo/organizations/{org_id}/bfo/",
-                timeout=FNS_TIMEOUT,
+                delay_seconds=delay_seconds,
+                retries=retries,
             )
-            bfo_response.raise_for_status()
             source_url = f"{base}/organizations-card/{org_id}"
             return parse_fns_bfo(
-                bfo_response.json(),
+                _json_payload(bfo_response, label=f"БФО ИНН {inn}"),
                 inn=inn,
                 source_url=source_url,
                 search_item=search_item,
             )
-        except (requests.RequestException, ValueError) as exc:
+            except (requests.RequestException, ValueError, RuntimeError) as exc:
             last_error = exc
             continue
     if last_error:
@@ -277,6 +352,8 @@ def fetch_financials_for_inns(
     cache_dir: Path,
     cache_days: int = DEFAULT_CACHE_DAYS,
     workers: int = DEFAULT_WORKERS,
+    delay_seconds: float = DEFAULT_DELAY_SECONDS,
+    retries: int = DEFAULT_RETRIES,
 ) -> tuple[pd.DataFrame, FetchStats]:
     normalized = sorted({
         re.sub(r"\D", "", str(value or ""))
@@ -300,7 +377,11 @@ def fetch_financials_for_inns(
 
     def one(inn: str) -> tuple[str, dict[str, Any] | None, str | None]:
         try:
-            row = fetch_fns_financials(inn)
+            row = fetch_fns_financials(
+                inn,
+                delay_seconds=max(0.0, float(delay_seconds)),
+                retries=max(1, int(retries)),
+            )
             return inn, row, None
         except Exception as exc:
             return inn, None, str(exc)
