@@ -35,6 +35,8 @@ from moex_bond_search_and_analysis.ratings import (
 )
 from moex_bond_search_and_analysis.financials import (
     DEFAULT_CACHE_DAYS,
+    DEFAULT_DELAY_SECONDS,
+    DEFAULT_RETRIES,
     DEFAULT_WORKERS,
     fetch_financials_for_inns,
     merge_financial_rows,
@@ -535,6 +537,18 @@ def main() -> int:
         default=DEFAULT_WORKERS,
         help="Параллельные запросы к ГИР БО ФНС (1–4)",
     )
+    parser.add_argument(
+        "--financial-delay-seconds",
+        type=float,
+        default=DEFAULT_DELAY_SECONDS,
+        help="Минимальная пауза между запросами к ГИР БО ФНС",
+    )
+    parser.add_argument(
+        "--financial-retries",
+        type=int,
+        default=DEFAULT_RETRIES,
+        help="Количество попыток на один запрос к ГИР БО ФНС",
+    )
     args = parser.parse_args()
     try:
         source = args.input or find_latest_deep_file(Path.cwd())
@@ -573,6 +587,8 @@ def main() -> int:
                     cache_dir=cache_dir,
                     cache_days=max(0, args.financial_cache_days),
                     workers=max(1, min(args.financial_workers, 4)),
+                    delay_seconds=max(0.0, args.financial_delay_seconds),
+                    retries=max(1, args.financial_retries),
                 )
                 financials = merge_financial_rows(financials, fetched_financials)
                 financials.to_excel(financials_path, index=False)
