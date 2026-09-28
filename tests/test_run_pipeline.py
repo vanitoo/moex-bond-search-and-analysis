@@ -88,7 +88,7 @@ def test_old_ratings_cache_is_not_reused(tmp_path: Path):
         ratings_cache_hours=24,
     )
 
-    assert arguments == ["--data-dir", str(data_dir), "--financial-cache-days", "35", "--financial-workers", "3"]
+    assert arguments == ["--data-dir", str(data_dir), "--financial-cache-days", "35", "--financial-workers", "1", "--financial-delay-seconds", "1.2", "--financial-retries", "4"]
 
 
 def test_credit_stage_can_disable_financial_fetch(tmp_path: Path):
