@@ -292,6 +292,36 @@ def _json_payload(response: requests.Response, *, label: str) -> Any:
         ) from exc
 
 
+def _paced_json_get(
+    client: requests.Session,
+    url: str,
+    *,
+    params: dict[str, Any] | None = None,
+    delay_seconds: float = DEFAULT_DELAY_SECONDS,
+    retries: int = DEFAULT_RETRIES,
+    label: str,
+) -> Any:
+    last_error: Exception | None = None
+    attempts = max(1, int(retries))
+    for attempt in range(attempts):
+        try:
+            response = _paced_get(
+                client,
+                url,
+                params=params,
+                delay_seconds=delay_seconds,
+                retries=1,
+            )
+            return _json_payload(response, label=label)
+        except (requests.RequestException, RuntimeError, ValueError) as exc:
+            last_error = exc
+            if attempt + 1 < attempts:
+                time.sleep(min(30.0, 2.0 * (2 ** attempt)))
+                continue
+            break
+    raise RuntimeError(str(last_error or f"{label}: неизвестная ошибка ГИР БО"))
+
+
 def fetch_fns_financials(
     inn: str,
     *,
@@ -312,33 +342,32 @@ def fetch_fns_financials(
     last_error: Exception | None = None
     for base in FNS_BASES:
         try:
-            search_response = _paced_get(
+            search_payload = _paced_json_get(
                 client,
                 f"{base}/advanced-search/organizations/search",
                 params={"query": inn, "page": 0, "size": 20},
                 delay_seconds=delay_seconds,
                 retries=retries,
+                label=f"поиск ИНН {inn}",
             )
-            org_id, search_item = _find_org_id(
-                _json_payload(search_response, label=f"поиск ИНН {inn}"),
-                inn,
-            )
+            org_id, search_item = _find_org_id(search_payload, inn)
             if not org_id:
                 continue
-            bfo_response = _paced_get(
+            bfo_payload = _paced_json_get(
                 client,
                 f"{base}/nbo/organizations/{org_id}/bfo/",
                 delay_seconds=delay_seconds,
                 retries=retries,
+                label=f"БФО ИНН {inn}",
             )
             source_url = f"{base}/organizations-card/{org_id}"
             return parse_fns_bfo(
-                _json_payload(bfo_response, label=f"БФО ИНН {inn}"),
+                bfo_payload,
                 inn=inn,
                 source_url=source_url,
                 search_item=search_item,
             )
-            except (requests.RequestException, ValueError, RuntimeError) as exc:
+        except (requests.RequestException, ValueError, RuntimeError) as exc:
             last_error = exc
             continue
     if last_error:
