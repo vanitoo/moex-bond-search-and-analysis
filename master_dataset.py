@@ -174,6 +174,9 @@ def normalized_blocks(raw_modules: dict[str, dict[str, Any]]) -> dict[str, Any]:
         "credit": {
             "issuer": first(credit, "Эмитент", "Название эмитента", "Наименование эмитента"),
             "inn": first(credit, "ИНН"),
+            "issuer_type": first(credit, "Тип эмитента"),
+            "model_key": first(credit, "Ключ модели"),
+            "methodology": first(credit, "Методика кредитного анализа"),
             "rating": first(credit, "Рейтинг", "Кредитный рейтинг"),
             "agency": first(credit, "Рейтинговое агентство", "Агентство"),
             "score": as_float(first(credit, "Кредитный балл", "Итоговый кредитный балл", "Оценка кредитного риска")),
