@@ -41,6 +41,10 @@ from moex_bond_search_and_analysis.financials import (
     fetch_financials_for_inns,
     merge_financial_rows,
 )
+from moex_bond_search_and_analysis.issuer_credit_model import (
+    IssuerCreditModel,
+    classify_issuer,
+)
 
 
 RATING_TEMPLATE_COLUMNS = [
@@ -241,7 +245,12 @@ def calculate_metrics(fin: pd.Series | None) -> dict[str, float | None]:
     }
 
 
-def evaluate(source: pd.Series, rating: pd.Series | None, fin: pd.Series | None) -> CreditResult:
+def evaluate(
+    source: pd.Series,
+    rating: pd.Series | None,
+    fin: pd.Series | None,
+    model: IssuerCreditModel,
+) -> CreditResult:
     positives: list[str] = []
     risks: list[str] = []
     missing: list[str] = []
@@ -251,6 +260,7 @@ def evaluate(source: pd.Series, rating: pd.Series | None, fin: pd.Series | None)
 
     rating_score = 0
     rating_value = ""
+    rating_date: date | None = None
     if rating is None:
         missing.append("Кредитный рейтинг")
     else:
@@ -293,79 +303,107 @@ def evaluate(source: pd.Series, rating: pd.Series | None, fin: pd.Series | None)
         elif direction > 0:
             positives.append(f"Рейтинг повышен с {previous} до {rating_value}")
 
-    metrics = calculate_metrics(fin)
+    # Корпоративные коэффициенты применимы только к обычным компаниям.
+    # Банки, регионы и СФО не штрафуются за отсутствие корпоративной EBITDA.
+    metrics = calculate_metrics(fin if model.key == "corporate" else None)
     financial_score = 0
-    if fin is None:
-        missing.append("Финансовая отчётность")
-    else:
-        nd_ebitda = metrics["Чистый долг/EBITDA"]
-        coverage = metrics["Покрытие процентов"]
-        current = metrics["Текущая ликвидность"]
-        debt_equity = metrics["Долг/Капитал"]
-        net_margin = metrics["Маржа чистой прибыли"]
-        ocf_debt = metrics["OCF/Долг"]
 
-        if nd_ebitda is None:
-            missing.append("Чистый долг/EBITDA")
-        elif nd_ebitda < 2:
-            financial_score += 10; positives.append("Низкая долговая нагрузка")
-        elif nd_ebitda <= 3.5:
-            financial_score += 7; positives.append("Умеренная долговая нагрузка")
-        elif nd_ebitda <= 5:
-            financial_score += 3; risks.append("Повышенная долговая нагрузка")
+    if model.key == "corporate":
+        if fin is None:
+            missing.append("Финансовая отчётность")
         else:
-            risks.append("Очень высокая долговая нагрузка"); penalty += 12
+            nd_ebitda = metrics["Чистый долг/EBITDA"]
+            coverage = metrics["Покрытие процентов"]
+            current = metrics["Текущая ликвидность"]
+            debt_equity = metrics["Долг/Капитал"]
+            net_margin = metrics["Маржа чистой прибыли"]
+            ocf_debt = metrics["OCF/Долг"]
 
-        if coverage is None:
-            missing.append("Покрытие процентов")
-        elif coverage >= 4:
-            financial_score += 8; positives.append("Хорошее покрытие процентных расходов")
-        elif coverage >= 2:
-            financial_score += 5
-        elif coverage >= 1:
-            financial_score += 1; risks.append("Слабое покрытие процентов")
-        else:
-            risks.append("EBITDA не покрывает процентные расходы"); penalty += 12
+            if nd_ebitda is None:
+                missing.append("Чистый долг/EBITDA")
+            elif nd_ebitda < 2:
+                financial_score += 10; positives.append("Низкая долговая нагрузка")
+            elif nd_ebitda <= 3.5:
+                financial_score += 7; positives.append("Умеренная долговая нагрузка")
+            elif nd_ebitda <= 5:
+                financial_score += 3; risks.append("Повышенная долговая нагрузка")
+            else:
+                risks.append("Очень высокая долговая нагрузка"); penalty += 12
 
-        if current is None:
-            missing.append("Текущая ликвидность")
-        elif current >= 1.5:
-            financial_score += 5; positives.append("Хорошая текущая ликвидность")
-        elif current >= 1:
-            financial_score += 3
-        else:
-            risks.append("Оборотных активов меньше краткосрочных обязательств"); penalty += 6
+            if coverage is None:
+                missing.append("Покрытие процентов")
+            elif coverage >= 4:
+                financial_score += 8; positives.append("Хорошее покрытие процентных расходов")
+            elif coverage >= 2:
+                financial_score += 5
+            elif coverage >= 1:
+                financial_score += 1; risks.append("Слабое покрытие процентов")
+            else:
+                risks.append("EBITDA не покрывает процентные расходы"); penalty += 12
 
-        if debt_equity is not None:
-            if debt_equity <= 1.5:
+            if current is None:
+                missing.append("Текущая ликвидность")
+            elif current >= 1.5:
+                financial_score += 5; positives.append("Хорошая текущая ликвидность")
+            elif current >= 1:
                 financial_score += 3
-            elif debt_equity > 3:
-                risks.append("Высокое отношение долга к капиталу"); penalty += 5
+            else:
+                risks.append("Оборотных активов меньше краткосрочных обязательств"); penalty += 6
 
-        if net_margin is not None:
-            if net_margin > 0.05:
-                financial_score += 2; positives.append("Положительная чистая маржа")
-            elif net_margin < 0:
-                risks.append("Компания убыточна"); penalty += 8
+            if debt_equity is not None:
+                if debt_equity <= 1.5:
+                    financial_score += 3
+                elif debt_equity > 3:
+                    risks.append("Высокое отношение долга к капиталу"); penalty += 5
 
-        if ocf_debt is not None:
-            if ocf_debt >= 0.2:
-                financial_score += 2; positives.append("Долг поддержан операционным денежным потоком")
-            elif ocf_debt < 0:
-                risks.append("Отрицательный операционный денежный поток"); penalty += 8
+            if net_margin is not None:
+                if net_margin > 0.05:
+                    financial_score += 2; positives.append("Положительная чистая маржа")
+                elif net_margin < 0:
+                    risks.append("Компания убыточна"); penalty += 8
 
-    financial_score = min(30, financial_score)
-    expected_fields = 10
-    available = max(0, expected_fields - min(expected_fields, len(missing)))
-    completeness_score = round(10 * available / expected_fields)
+            if ocf_debt is not None:
+                if ocf_debt >= 0.2:
+                    financial_score += 2; positives.append("Долг поддержан операционным денежным потоком")
+                elif ocf_debt < 0:
+                    risks.append("Отрицательный операционный денежный поток"); penalty += 8
 
-    final_score = round(second_score * 0.30 + rating_score + financial_score + completeness_score - penalty)
+        financial_score = min(30, financial_score)
+        expected_fields = 10
+        available = max(0, expected_fields - min(expected_fields, len(missing)))
+        completeness_score = round(10 * available / expected_fields)
+        final_score = round(
+            second_score * 0.30
+            + rating_score
+            + financial_score
+            + completeness_score
+            - penalty
+        )
+    else:
+        if model.specialist_data_label:
+            missing.append(model.specialist_data_label)
+        # Для классов, где Debt/EBITDA методологически неприменим, не притворяемся,
+        # что отсутствие РСБУ — недостаток. До подключения секторных источников
+        # используем рейтинг-центричную fallback-модель и не даём высокой уверенности.
+        rating_normalized = rating_score / 30.0 * 100.0 if rating_score else 0.0
+        completeness_score = 7 if rating_value and rating_date else 5 if rating_value else 2
+        final_score = round(
+            second_score * 0.55
+            + rating_normalized * 0.35
+            + completeness_score
+            - penalty
+        )
+        positives.append(f"Применена специализированная модель: {model.label}")
+
     final_score = max(0, min(100, final_score))
 
     if hard_stop:
         recommendation, css = "Не покупать", "avoid"
         final_score = min(final_score, 20)
-    elif len(missing) >= 6:
+    elif model.key != "corporate" and not rating_value:
+        recommendation, css = "Недостаточно данных", "missing"
+        final_score = min(final_score, 49)
+    elif model.key == "corporate" and len(missing) >= 6:
         recommendation, css = "Недостаточно данных", "missing"
         final_score = min(final_score, 49)
     elif final_score >= 82:
@@ -390,7 +428,11 @@ def evaluate(source: pd.Series, rating: pd.Series | None, fin: pd.Series | None)
     else:
         risk_level, max_share = "Приемлемый по доступным данным", "до 5%"
 
-    confidence = "Высокая" if completeness_score >= 9 else "Средняя" if completeness_score >= 6 else "Низкая"
+    if model.key != "corporate" and model.specialist_data_label:
+        confidence = "Средняя" if rating_value else "Низкая"
+    else:
+        confidence = "Высокая" if completeness_score >= 9 else "Средняя" if completeness_score >= 6 else "Низкая"
+
     return CreditResult(
         rating_score, financial_score, completeness_score, penalty, final_score,
         recommendation, css, risk_level, confidence, max_share, hard_stop,
@@ -406,7 +448,12 @@ def build_analysis(deep: pd.DataFrame, ratings: pd.DataFrame, financials: pd.Dat
         print(f"[{index}/{len(deep)}] Кредитный анализ: {name} ({secid})")
         rating = best_match(source, ratings)
         fin = best_match(source, financials)
-        result = evaluate(source, rating, fin)
+        model = classify_issuer(
+            name,
+            "" if rating is None else rating.get("Эмитент"),
+            "" if fin is None else fin.get("Эмитент"),
+        )
+        result = evaluate(source, rating, fin, model)
         metrics = result.metrics
         rows.append({
             "Полное наименование": name,
@@ -418,6 +465,9 @@ def build_analysis(deep: pd.DataFrame, ratings: pd.DataFrame, financials: pd.Dat
                 "" if rating is None else rating.get("ИНН")
             ) or ("" if fin is None else fin.get("ИНН")) or "",
             "Доходность": source.get("Доходность"),
+            "Тип эмитента": model.label,
+            "Ключ модели": model.key,
+            "Методика кредитного анализа": model.methodology,
             "Баллы второго слоя": source.get("Итоговый балл"),
             "Решение второго слоя": source.get("Решение"),
             "Рейтинг": "" if rating is None else rating.get("Рейтинг"),
