@@ -343,6 +343,10 @@ def main() -> None:
         candidates.to_excel(writer, sheet_name="Кандидаты в портфель", index=False)
         pd.DataFrame({"Параметр": ["Стратегия", "Включённые модули", "Базовый источник", "Рейтинговых событий"], "Значение": [config.get("strategy"), ", ".join(sorted(enabled)), source_name, len(rating_events)]}).to_excel(writer, sheet_name="Конфигурация", index=False)
     html.write_text(result.to_html(index=False), encoding="utf-8")
+    json_path.write_text(
+        json.dumps(candidates.to_dict(orient="records"), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     print(f"Обработано уникальных SECID: {len(result)}")
     print(f"Учтено рейтинговых событий: {len(rating_events)}")
     print(f"Допущено к покупке: {shortlist['admitted']}")
