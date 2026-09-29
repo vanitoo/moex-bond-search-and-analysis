@@ -178,3 +178,4 @@ cython_debug/
 .python-version
 .vscode
 news_*
+data/
