@@ -1,4 +1,5 @@
 import importlib.util
+import sys
 from pathlib import Path
 
 import pandas as pd
@@ -9,6 +10,7 @@ from moex_bond_search_and_analysis.issuer_credit_model import classify_issuer
 MODULE_PATH = Path(__file__).resolve().parents[1] / "7_bonds_credit_analysis.py"
 spec = importlib.util.spec_from_file_location("credit_analysis_module", MODULE_PATH)
 credit = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = credit
 assert spec.loader is not None
 spec.loader.exec_module(credit)
 
