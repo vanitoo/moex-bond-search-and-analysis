@@ -129,8 +129,13 @@ def _status_for_row(module: str, row: pd.Series) -> tuple[str, bool | None, bool
     if module == "credit":
         missing = normalize(row.get("Недостающие данные"))
         rating = normalize(row.get("Рейтинг"))
-        if "финансовая отчетность" in missing or not rating:
-            return "NO_DATA", None, False, -40.0, "CREDIT_DATA_INCOMPLETE", str(row.get("Недостающие данные") or "Нет рейтинга")
+        model_key = normalize(row.get("Ключ модели"))
+        if not rating:
+            return "NO_DATA", None, False, -40.0, "CREDIT_RATING_MISSING", str(row.get("Недостающие данные") or "Нет рейтинга")
+        if model_key in {"", "corporate"} and "финансовая отчетность" in missing:
+            return "NO_DATA", None, False, -25.0, "CORPORATE_FINANCIALS_MISSING", str(row.get("Недостающие данные") or "Нет корпоративной отчётности")
+        if model_key in {"bank", "region", "structured_finance"} and missing not in {"", "—", "-"}:
+            return "WARNING", True, False, -8.0, "SECTOR_DATA_PARTIAL", str(row.get("Недостающие данные"))
 
     if module == "decision":
         decision = normalize(row.get("Финальное решение"))
