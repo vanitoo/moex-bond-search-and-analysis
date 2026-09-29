@@ -455,6 +455,7 @@ def build_analysis(deep: pd.DataFrame, ratings: pd.DataFrame, financials: pd.Dat
         )
         result = evaluate(source, rating, fin, model)
         metrics = result.metrics
+        used_fin = fin if model.key == "corporate" else None
         rows.append({
             "Полное наименование": name,
             "Код ценной бумаги": secid,
@@ -475,7 +476,7 @@ def build_analysis(deep: pd.DataFrame, ratings: pd.DataFrame, financials: pd.Dat
             "Прогноз": "" if rating is None else rating.get("Прогноз"),
             "Дата рейтинга": "" if rating is None else rating.get("Дата рейтинга"),
             "Баллы рейтинга": result.rating_score,
-            "Период отчётности": "" if fin is None else fin.get("Период"),
+            "Период отчётности": "" if used_fin is None else used_fin.get("Период"),
             "Чистый долг/EBITDA": metrics["Чистый долг/EBITDA"],
             "Долг/EBITDA": metrics["Долг/EBITDA"],
             "Покрытие процентов": metrics["Покрытие процентов"],
@@ -497,7 +498,7 @@ def build_analysis(deep: pd.DataFrame, ratings: pd.DataFrame, financials: pd.Dat
             "Риски": "; ".join(result.risks) or "Явные риски не обнаружены",
             "Недостающие данные": "; ".join(result.missing) or "—",
             "Источник рейтинга": "" if rating is None else rating.get("Источник"),
-            "Источник финансов": "" if fin is None else fin.get("Источник"),
+            "Источник финансов": "" if used_fin is None else used_fin.get("Источник"),
             "_class": result.recommendation_class,
         })
     return pd.DataFrame(rows).sort_values(
