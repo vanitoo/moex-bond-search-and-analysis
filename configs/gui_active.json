@@ -71,7 +71,10 @@
       "financial_cache_days": 35,
       "financial_workers": 1,
       "financial_delay_seconds": 1.2,
-      "financial_retries": 4
+      "financial_retries": 4,
+      "fetch_bank_metrics": true,
+      "bank_cache_days": 7,
+      "bank_delay_seconds": 0.4
     },
     "decision": {
       "enabled": true,
