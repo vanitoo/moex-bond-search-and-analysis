@@ -442,6 +442,13 @@ def render_bond_explanation(bond: dict[str, Any]) -> None:
     elif events:
         st.success("По журналу включённых модулей предупреждений нет.")
 
+    negative = deep_get(bond, "decision.negative_factors")
+    shortlist_reason = deep_get(bond, "decision.shortlist_reason")
+    if negative and str(negative) not in {"—", "Явных отрицательных факторов не зафиксировано"}:
+        st.caption("Факторы снижения: " + str(negative))
+    if shortlist_reason:
+        st.caption("Shortlist: " + str(shortlist_reason))
+
 
 def render_candidates(run_dir: Path) -> None:
     st.subheader("Кандидаты к покупке")
