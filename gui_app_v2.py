@@ -425,6 +425,15 @@ def render_bond_explanation(bond: dict[str, Any]) -> None:
     title = bond_label(bond)
     st.markdown(f"**{title}**")
     st.write(f"Решение: **{decision}**" + (f" · балл **{score:.0f}**" if score is not None else ""))
+    breakdown = deep_get(bond, "decision.score_breakdown")
+    points_to_strong = deep_get(bond, "decision.points_to_strong")
+    if breakdown:
+        st.caption("Расчёт: " + str(breakdown))
+    try:
+        if points_to_strong is not None and float(points_to_strong) > 0:
+            st.caption(f"До сильного порога 86: {float(points_to_strong):.0f} балл.")
+    except (TypeError, ValueError):
+        pass
     events = bond.get("modules", {})
     risks = []
     good = []
