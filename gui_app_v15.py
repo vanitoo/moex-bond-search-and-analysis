@@ -242,6 +242,7 @@ def render_model_shortlist(run_dir: Path) -> None:
             "secid": "SECID",
             "name": "Название",
             "issuer": "Эмитент",
+            "issuer_type": "Тип эмитента",
             "score": "Баллы",
             "yield": "YTM, %",
             "rating": "Рейтинг",
@@ -250,7 +251,7 @@ def render_model_shortlist(run_dir: Path) -> None:
             "max_purchase_rub": "Лимит покупки, ₽",
         })
         columns = [
-            "SECID", "Название", "Эмитент", "Баллы", "YTM, %", "Рейтинг",
+            "SECID", "Название", "Эмитент", "Тип эмитента", "Баллы", "YTM, %", "Рейтинг",
             "Уровень", "Уверенность", "Лимит покупки, ₽",
         ]
         st.dataframe(frame[[col for col in columns if col in frame.columns]], width="stretch", hide_index=True)
