@@ -43,7 +43,7 @@ def _local(tag: str) -> str:
 
 def _norm(value: Any) -> str:
     text = str(value or "").lower().replace("ё", "е")
-    text = re.sub(r"[«»"'()]", " ", text)
+    text = re.sub(r'[«»"\'()]', " ", text)
     return re.sub(r"\s+", " ", text).strip()
 
 
