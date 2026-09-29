@@ -123,11 +123,15 @@ def stage_arguments(script_name: str, impact_share: float, project_root: Path, c
             arguments.append("--no-fetch-ratings")
         if settings.get("fetch_financials", True) is False:
             arguments.append("--no-fetch-financials")
+        if settings.get("fetch_bank_metrics", True) is False:
+            arguments.append("--no-fetch-bank-metrics")
         arguments += [
             "--financial-cache-days", str(settings.get("financial_cache_days", 35)),
             "--financial-workers", str(settings.get("financial_workers", 1)),
             "--financial-delay-seconds", str(settings.get("financial_delay_seconds", 1.2)),
             "--financial-retries", str(settings.get("financial_retries", 4)),
+            "--bank-cache-days", str(settings.get("bank_cache_days", 7)),
+            "--bank-delay-seconds", str(settings.get("bank_delay_seconds", 0.4)),
         ]
         return arguments
     if script_name == "8_bonds_decision.py":
