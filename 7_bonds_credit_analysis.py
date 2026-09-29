@@ -508,13 +508,16 @@ def build_analysis(deep: pd.DataFrame, ratings: pd.DataFrame, financials: pd.Dat
 
 def write_excel(df: pd.DataFrame, output: Path, source: Path) -> None:
     methodology = pd.DataFrame({
-        "Блок": ["Назначение", "Второй слой", "Рейтинг", "Финансы", "Полнота", "Жёсткие стопы", "Исходный файл"],
+        "Блок": [
+            "Назначение", "Корпоративная модель", "Банковская модель",
+            "Региональная модель", "Секьюритизация / СФО", "Жёсткие стопы", "Исходный файл",
+        ],
         "Описание": [
-            "Третий слой: кредитный рейтинг и финансовая устойчивость эмитента.",
-            "30% итогового балла берётся из результата скрипта №6.",
-            "До 30 баллов за рейтинг, актуальность, прогноз и направление изменения.",
-            "До 30 баллов за долговую нагрузку, покрытие процентов, ликвидность, прибыль и денежный поток.",
-            "До 10 баллов за полноту данных. Отсутствующие сведения уменьшают уверенность.",
+            "Третий слой: методика выбирается по типу эмитента, чтобы не применять корпоративный Debt/EBITDA там, где он неприменим.",
+            "30% второй слой + до 30 баллов рейтинг + до 30 баллов корпоративные финансы + до 10 баллов полнота.",
+            "55% второй слой + 35% нормализованный рейтинг + до 10% полнота; до подключения показателей ЦБ уверенность не выше средней.",
+            "55% второй слой + 35% нормализованный рейтинг + до 10% полнота; до подключения бюджета/госдолга уверенность не выше средней.",
+            "55% второй слой + 35% нормализованный рейтинг + до 10% полнота; до подключения структуры транша уверенность не выше средней.",
             "Стоп второго слоя и рейтинги CCC/CC/C/D автоматически запрещают покупку.",
             source.name,
         ],
@@ -522,6 +525,16 @@ def write_excel(df: pd.DataFrame, output: Path, source: Path) -> None:
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df.drop(columns=["_class"]).to_excel(writer, sheet_name="Кредитный анализ", index=False)
         methodology.to_excel(writer, sheet_name="Методика", index=False)
+        type_stats = (
+            df.groupby(["Тип эмитента", "Ключ модели"], dropna=False)
+            .agg(
+                Выпусков=("Код ценной бумаги", "count"),
+                Средний_кредитный_балл=("Итоговый кредитный балл", "mean"),
+                Средняя_полнота=("Полнота данных", "mean"),
+            )
+            .reset_index()
+        )
+        type_stats.to_excel(writer, sheet_name="Типы эмитентов", index=False)
         sheet = writer.book["Кредитный анализ"]
         sheet.freeze_panes = "A2"
         sheet.auto_filter.ref = sheet.dimensions
@@ -545,6 +558,7 @@ def write_html(df: pd.DataFrame, output: Path, source: Path) -> None:
         <article class="bond {css}" data-class="{css}">
           <div class="head"><div><h2>{html.escape(str(row['Полное наименование']))}</h2><a href="https://www.moex.com/ru/issue.aspx?board=TQCB&code={secid}" target="_blank">{secid}</a></div><div class="score">{int(row['Итоговый кредитный балл'])}/100</div></div>
           <div class="decision">{html.escape(str(row['Финальное решение']))} · риск: {html.escape(str(row['Уровень риска']))} · доля: {html.escape(str(row['Максимальная доля']))}</div>
+          <div class="muted">{html.escape(str(row['Тип эмитента']))} · {html.escape(str(row['Методика кредитного анализа']))}</div>
           <div class="grid">
             <div><b>Рейтинг</b><span>{html.escape(str(row['Рейтинг'] or '—'))} · {html.escape(str(row['Агентство'] or '—'))}</span></div>
             <div><b>Чистый долг/EBITDA</b><span>{fmt(row['Чистый долг/EBITDA'])}</span></div>
