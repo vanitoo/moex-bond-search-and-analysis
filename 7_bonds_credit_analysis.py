@@ -695,6 +695,11 @@ def main() -> int:
                 )
 
         result = build_analysis(deep, ratings, financials)
+        type_counts = result["Тип эмитента"].value_counts().to_dict()
+        print(
+            "Кредитные модели: "
+            + ", ".join(f"{key}: {value}" for key, value in type_counts.items())
+        )
         stamp = datetime.now().strftime("%Y-%m-%d")
         excel = Path(f"bond_credit_analysis_{stamp}.xlsx")
         report = Path(f"bond_credit_analysis_{stamp}.html")
