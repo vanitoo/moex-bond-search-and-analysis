@@ -665,6 +665,23 @@ def main() -> int:
         default=DEFAULT_RETRIES,
         help="Количество попыток на один запрос к ГИР БО ФНС",
     )
+    parser.add_argument(
+        "--no-fetch-bank-metrics",
+        action="store_true",
+        help="Не обновлять обязательные нормативы банков из формы 0409135 Банка России",
+    )
+    parser.add_argument(
+        "--bank-cache-days",
+        type=int,
+        default=DEFAULT_BANK_CACHE_DAYS,
+        help="Сколько дней считать кэш банковских нормативов ЦБ свежим",
+    )
+    parser.add_argument(
+        "--bank-delay-seconds",
+        type=float,
+        default=DEFAULT_BANK_DELAY_SECONDS,
+        help="Пауза между запросами по банкам к веб-сервису Банка России",
+    )
     args = parser.parse_args()
     try:
         source = args.input or find_latest_deep_file(Path.cwd())
@@ -745,7 +762,62 @@ def main() -> int:
                     "Используется существующий локальный файл."
                 )
 
-        result = build_analysis(deep, ratings, financials)
+        bank_metrics_path = args.data_dir / "issuer_bank_metrics.xlsx"
+        bank_metrics_table = (
+            load_optional_table(bank_metrics_path, BANK_COLUMNS)
+            if bank_metrics_path.exists()
+            else pd.DataFrame(columns=BANK_COLUMNS)
+        )
+        if not args.no_fetch_bank_metrics:
+            bank_issuers: list[dict[str, str]] = []
+            seen_banks: set[str] = set()
+            for _, source_row in deep.iterrows():
+                matched_rating = best_match(source_row, ratings)
+                model = classify_issuer(
+                    source_row.get("Полное наименование"),
+                    "" if matched_rating is None else matched_rating.get("Эмитент"),
+                )
+                if model.key != "bank":
+                    continue
+                issuer_name = (
+                    "" if matched_rating is None else str(matched_rating.get("Эмитент") or "")
+                ) or str(source_row.get("Полное наименование") or "")
+                inn = str(source_row.get("ИНН") or "")
+                key = re.sub(r"\D", "", inn) or normalize(issuer_name)
+                if key in seen_banks:
+                    continue
+                seen_banks.add(key)
+                bank_issuers.append({"name": issuer_name, "inn": inn})
+            try:
+                fetched_banks, bank_stats = fetch_bank_metrics_for_issuers(
+                    bank_issuers,
+                    cache_dir=args.data_dir / "bank_cache" / "cbr_f135",
+                    cache_days=max(0, args.bank_cache_days),
+                    delay_seconds=max(0.0, args.bank_delay_seconds),
+                )
+                if not fetched_banks.empty:
+                    bank_metrics_table = fetched_banks
+                    bank_metrics_table.to_excel(bank_metrics_path, index=False)
+                print(
+                    "Банковские нормативы ЦБ РФ: "
+                    f"запрошено {bank_stats.requested}, получено {bank_stats.fetched}, "
+                    f"из кэша {bank_stats.cached}, не найдено {bank_stats.not_found}, "
+                    f"ошибок {len(bank_stats.errors)}. "
+                    f"Кэш: {bank_metrics_path}"
+                )
+                if bank_stats.errors:
+                    print(
+                        "Внимание: часть банковских данных получить не удалось: "
+                        + "; ".join(bank_stats.errors[:10])
+                        + ("; ..." if len(bank_stats.errors) > 10 else "")
+                    )
+            except (OSError, ValueError, RuntimeError, requests.RequestException) as exc:
+                print(
+                    f"Внимание: обновление банковских нормативов ЦБ не удалось: {exc}. "
+                    "Используется существующий локальный файл, если он есть."
+                )
+
+        result = build_analysis(deep, ratings, financials, bank_metrics_table)
         type_counts = result["Тип эмитента"].value_counts().to_dict()
         print(
             "Кредитные модели: "
