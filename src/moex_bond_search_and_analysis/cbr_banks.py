@@ -7,8 +7,8 @@ import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from io import StringIO
 from pathlib import Path
+from html.parser import HTMLParser
 from typing import Any, Iterable
 from xml.sax.saxutils import escape
 
@@ -234,26 +234,62 @@ def _parse_f135_records(root: ET.Element) -> dict[str, float]:
     return result
 
 
+class _SimpleTableParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.rows: list[list[str]] = []
+        self._row: list[str] | None = None
+        self._cell: list[str] | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() == "tr":
+            self._row = []
+        elif tag.lower() in {"td", "th"} and self._row is not None:
+            self._cell = []
+
+    def handle_data(self, data: str) -> None:
+        if self._cell is not None:
+            self._cell.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        low = tag.lower()
+        if low in {"td", "th"} and self._row is not None and self._cell is not None:
+            self._row.append(" ".join("".join(self._cell).split()))
+            self._cell = None
+        elif low == "tr" and self._row is not None:
+            if self._row:
+                self.rows.append(self._row)
+            self._row = None
+
+
 def _parse_f135_html(content: str) -> dict[str, float]:
     ratios: dict[str, float] = {}
-    try:
-        tables = pd.read_html(StringIO(content))
-    except ValueError:
-        return ratios
-    for table in tables:
-        if table.empty:
+    parser = _SimpleTableParser()
+    parser.feed(content)
+
+    code_index: int | None = None
+    fact_index: int | None = None
+    for row in parser.rows:
+        lowered = [cell.lower() for cell in row]
+        if code_index is None:
+            code_index = next(
+                (i for i, cell in enumerate(lowered) if "наименование" in cell or "норматив" in cell),
+                None,
+            )
+            fact_index = next(
+                (i for i, cell in enumerate(lowered) if "фактичес" in cell),
+                None,
+            )
+            if code_index is not None and fact_index is not None:
+                continue
+        if code_index is None or fact_index is None:
             continue
-        columns = [" ".join(map(str, col)) if isinstance(col, tuple) else str(col) for col in table.columns]
-        table.columns = columns
-        code_col = next((col for col in table.columns if "наименование" in col.lower() or "норматив" in col.lower()), None)
-        fact_col = next((col for col in table.columns if "фактичес" in col.lower()), None)
-        if not code_col or not fact_col:
+        if max(code_index, fact_index) >= len(row):
             continue
-        for _, row in table.iterrows():
-            code = _normalize_ratio_code(row.get(code_col))
-            value = _number(row.get(fact_col))
-            if code and value is not None:
-                ratios[code] = value
+        code = _normalize_ratio_code(row[code_index])
+        value = _number(row[fact_index])
+        if code and value is not None:
+            ratios[code] = value
     return ratios
 
 
