@@ -567,7 +567,7 @@ def write_excel(df: pd.DataFrame, output: Path, source: Path) -> None:
         "Описание": [
             "Третий слой: методика выбирается по типу эмитента, чтобы не применять корпоративный Debt/EBITDA там, где он неприменим.",
             "30% второй слой + до 30 баллов рейтинг + до 30 баллов корпоративные финансы + до 10 баллов полнота.",
-            "55% второй слой + 35% нормализованный рейтинг + до 10% полнота; до подключения показателей ЦБ уверенность не выше средней.",
+            "При наличии формы 0409135: 30% второй слой + до 30 баллов рейтинг + до 30 баллов за Н1.0/Н1.1/Н1.2/Н2/Н3/Н4 + до 10 баллов полнота; при отсутствии формы используется осторожный rating-only fallback.",
             "55% второй слой + 35% нормализованный рейтинг + до 10% полнота; до подключения бюджета/госдолга уверенность не выше средней.",
             "55% второй слой + 35% нормализованный рейтинг + до 10% полнота; до подключения структуры транша уверенность не выше средней.",
             "Стоп второго слоя и рейтинги CCC/CC/C/D автоматически запрещают покупку.",
@@ -606,6 +606,20 @@ def write_html(df: pd.DataFrame, output: Path, source: Path) -> None:
     for _, row in df.iterrows():
         css = row.get("_class", "wait")
         secid = html.escape(str(row["Код ценной бумаги"]))
+        if str(row.get("Ключ модели") or "") == "bank":
+            metric_grid = f"""
+            <div><b>Н1.0</b><span>{fmt(row.get('Н1.0'))}%</span></div>
+            <div><b>Н1.1 / Н1.2</b><span>{fmt(row.get('Н1.1'))}% / {fmt(row.get('Н1.2'))}%</span></div>
+            <div><b>Н2</b><span>{fmt(row.get('Н2'))}%</span></div>
+            <div><b>Н3</b><span>{fmt(row.get('Н3'))}%</span></div>
+            <div><b>Н4</b><span>{fmt(row.get('Н4'))}%</span></div>
+            """
+        else:
+            metric_grid = f"""
+            <div><b>Чистый долг/EBITDA</b><span>{fmt(row['Чистый долг/EBITDA'])}</span></div>
+            <div><b>Покрытие процентов</b><span>{fmt(row['Покрытие процентов'])}</span></div>
+            <div><b>Текущая ликвидность</b><span>{fmt(row['Текущая ликвидность'])}</span></div>
+            """
         cards.append(f"""
         <article class="bond {css}" data-class="{css}">
           <div class="head"><div><h2>{html.escape(str(row['Полное наименование']))}</h2><a href="https://www.moex.com/ru/issue.aspx?board=TQCB&code={secid}" target="_blank">{secid}</a></div><div class="score">{int(row['Итоговый кредитный балл'])}/100</div></div>
@@ -613,10 +627,8 @@ def write_html(df: pd.DataFrame, output: Path, source: Path) -> None:
           <div class="muted">{html.escape(str(row['Тип эмитента']))} · {html.escape(str(row['Методика кредитного анализа']))}</div>
           <div class="grid">
             <div><b>Рейтинг</b><span>{html.escape(str(row['Рейтинг'] or '—'))} · {html.escape(str(row['Агентство'] or '—'))}</span></div>
-            <div><b>Чистый долг/EBITDA</b><span>{fmt(row['Чистый долг/EBITDA'])}</span></div>
-            <div><b>Покрытие процентов</b><span>{fmt(row['Покрытие процентов'])}</span></div>
-            <div><b>Текущая ликвидность</b><span>{fmt(row['Текущая ликвидность'])}</span></div>
-            <div><b>Финансовые баллы</b><span>{int(row['Баллы финансов'])}/30</span></div>
+            {metric_grid}
+            <div><b>Финансовые/секторные баллы</b><span>{int(row['Баллы финансов'])}/30</span></div>
             <div><b>Уверенность</b><span>{html.escape(str(row['Уверенность']))}</span></div>
           </div>
           <div class="cols"><section><h3>Плюсы</h3>{list_html(row['Положительные факторы'], 'good')}</section><section><h3>Риски</h3>{list_html(row['Риски'], 'bad')}</section><section><h3>Не хватает</h3>{list_html(row['Недостающие данные'])}</section></div>
