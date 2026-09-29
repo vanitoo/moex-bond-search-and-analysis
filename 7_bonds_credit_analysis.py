@@ -45,6 +45,13 @@ from moex_bond_search_and_analysis.issuer_credit_model import (
     IssuerCreditModel,
     classify_issuer,
 )
+from moex_bond_search_and_analysis.cbr_banks import (
+    BANK_COLUMNS,
+    DEFAULT_BANK_CACHE_DAYS,
+    DEFAULT_BANK_DELAY_SECONDS,
+    fetch_bank_metrics_for_issuers,
+    score_bank_metrics,
+)
 
 
 RATING_TEMPLATE_COLUMNS = [
@@ -250,6 +257,7 @@ def evaluate(
     rating: pd.Series | None,
     fin: pd.Series | None,
     model: IssuerCreditModel,
+    bank_metrics: pd.Series | None = None,
 ) -> CreditResult:
     positives: list[str] = []
     risks: list[str] = []
@@ -379,6 +387,31 @@ def evaluate(
             + completeness_score
             - penalty
         )
+    elif model.key == "bank" and bank_metrics is not None:
+        bank_score, bank_positives, bank_risks, bank_hard_stop, bank_completeness = score_bank_metrics(bank_metrics)
+        positives.extend(bank_positives)
+        risks.extend(bank_risks)
+        hard_stop = hard_stop or bank_hard_stop
+        financial_score = bank_score
+        completeness_score = bank_completeness
+        metrics.update({
+            "Н1.0": safe_float(bank_metrics.get("Н1.0")),
+            "Н1.1": safe_float(bank_metrics.get("Н1.1")),
+            "Н1.2": safe_float(bank_metrics.get("Н1.2")),
+            "Н2": safe_float(bank_metrics.get("Н2")),
+            "Н3": safe_float(bank_metrics.get("Н3")),
+            "Н4": safe_float(bank_metrics.get("Н4")),
+        })
+        if bank_completeness < 7:
+            missing.append("Часть обязательных нормативов ЦБ РФ")
+        positives.append("Применена банковская модель по форме 0409135 Банка России")
+        final_score = round(
+            second_score * 0.30
+            + rating_score
+            + bank_score
+            + completeness_score
+            - penalty
+        )
     else:
         if model.specialist_data_label:
             missing.append(model.specialist_data_label)
@@ -428,7 +461,9 @@ def evaluate(
     else:
         risk_level, max_share = "Приемлемый по доступным данным", "до 5%"
 
-    if model.key != "corporate" and model.specialist_data_label:
+    if model.key == "bank" and bank_metrics is not None:
+        confidence = "Высокая" if completeness_score >= 8 and rating_value else "Средняя" if rating_value else "Низкая"
+    elif model.key != "corporate" and model.specialist_data_label:
         confidence = "Средняя" if rating_value else "Низкая"
     else:
         confidence = "Высокая" if completeness_score >= 9 else "Средняя" if completeness_score >= 6 else "Низкая"
@@ -440,7 +475,12 @@ def evaluate(
     )
 
 
-def build_analysis(deep: pd.DataFrame, ratings: pd.DataFrame, financials: pd.DataFrame) -> pd.DataFrame:
+def build_analysis(
+    deep: pd.DataFrame,
+    ratings: pd.DataFrame,
+    financials: pd.DataFrame,
+    bank_metrics_table: pd.DataFrame | None = None,
+) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     for index, (_, source) in enumerate(deep.iterrows(), start=1):
         name = str(source.get("Полное наименование") or "")
@@ -453,7 +493,10 @@ def build_analysis(deep: pd.DataFrame, ratings: pd.DataFrame, financials: pd.Dat
             "" if rating is None else rating.get("Эмитент"),
             "" if fin is None else fin.get("Эмитент"),
         )
-        result = evaluate(source, rating, fin, model)
+        bank_metrics = None
+        if model.key == "bank" and bank_metrics_table is not None and not bank_metrics_table.empty:
+            bank_metrics = best_match(source, bank_metrics_table)
+        result = evaluate(source, rating, fin, model, bank_metrics)
         metrics = result.metrics
         used_fin = fin if model.key == "corporate" else None
         rows.append({
@@ -485,6 +528,12 @@ def build_analysis(deep: pd.DataFrame, ratings: pd.DataFrame, financials: pd.Dat
             "Маржа EBITDA": metrics["Маржа EBITDA"],
             "Маржа чистой прибыли": metrics["Маржа чистой прибыли"],
             "OCF/Долг": metrics["OCF/Долг"],
+            "Н1.0": metrics.get("Н1.0"),
+            "Н1.1": metrics.get("Н1.1"),
+            "Н1.2": metrics.get("Н1.2"),
+            "Н2": metrics.get("Н2"),
+            "Н3": metrics.get("Н3"),
+            "Н4": metrics.get("Н4"),
             "Баллы финансов": result.financial_score,
             "Полнота данных": result.completeness_score,
             "Штрафы": result.penalty,
@@ -499,6 +548,8 @@ def build_analysis(deep: pd.DataFrame, ratings: pd.DataFrame, financials: pd.Dat
             "Недостающие данные": "; ".join(result.missing) or "—",
             "Источник рейтинга": "" if rating is None else rating.get("Источник"),
             "Источник финансов": "" if used_fin is None else used_fin.get("Источник"),
+            "Источник банковских данных": "" if bank_metrics is None else bank_metrics.get("Источник"),
+            "Дата банковских данных": "" if bank_metrics is None else bank_metrics.get("Дата отчётности"),
             "_class": result.recommendation_class,
         })
     return pd.DataFrame(rows).sort_values(
