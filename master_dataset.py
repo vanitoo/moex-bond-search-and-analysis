@@ -183,6 +183,14 @@ def normalized_blocks(raw_modules: dict[str, dict[str, Any]]) -> dict[str, Any]:
             "financial_score": as_float(first(credit, "Баллы финансов")),
             "financial_period": first(credit, "Период отчётности"),
             "financial_source": first(credit, "Источник финансов"),
+            "bank_report_date": first(credit, "Дата банковских данных"),
+            "bank_source": first(credit, "Источник банковских данных"),
+            "n1_0": as_float(first(credit, "Н1.0")),
+            "n1_1": as_float(first(credit, "Н1.1")),
+            "n1_2": as_float(first(credit, "Н1.2")),
+            "n2": as_float(first(credit, "Н2")),
+            "n3": as_float(first(credit, "Н3")),
+            "n4": as_float(first(credit, "Н4")),
             "confidence": first(credit, "Уверенность"),
             "missing_data": first(credit, "Недостающие данные"),
         },
@@ -198,6 +206,8 @@ def normalized_blocks(raw_modules: dict[str, dict[str, Any]]) -> dict[str, Any]:
             "blockers": first(decision, "Блокеры"),
             "completeness": first(decision, "Полнота оценки"),
             "credit_missing": first(decision, "Недостающие кредитные данные"),
+            "negative_factors": first(decision, "Почему потерял баллы"),
+            "shortlist_reason": first(decision, "Почему не shortlist"),
         },
     }
 
