@@ -43,8 +43,9 @@ def _local(tag: str) -> str:
 
 def _norm(value: Any) -> str:
     text = str(value or "").lower().replace("ё", "е")
-    text = re.sub(r'[«»"\'()]', " ", text)
-    return re.sub(r"\s+", " ", text).strip()
+    for char in ("«", "»", '"', "'", "(", ")"):
+        text = text.replace(char, " ")
+    return re.sub(r"\\s+", " ", text).strip()
 
 
 def _number(value: Any) -> float | None:
