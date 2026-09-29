@@ -203,6 +203,27 @@ def config_editor() -> dict[str, Any]:
                             "Источник — публичный ГИР БО ФНС. Для банков и части финансовых организаций "
                             "данные могут отсутствовать; такие позиции остаются с пониженной уверенностью."
                         )
+                    settings["fetch_bank_metrics"] = st.toggle(
+                        "Получать банковские нормативы из Банка России",
+                        value=bool(settings.get("fetch_bank_metrics", True)),
+                        key="credit_fetch_bank_metrics",
+                    )
+                    if settings["fetch_bank_metrics"]:
+                        b1, b2 = st.columns(2)
+                        settings["bank_cache_days"] = int(b1.number_input(
+                            "Кэш банковских нормативов, дней", min_value=0, max_value=365,
+                            value=int(settings.get("bank_cache_days", 7)), step=1,
+                            key="credit_bank_cache_days",
+                        ))
+                        settings["bank_delay_seconds"] = float(b2.number_input(
+                            "Пауза между запросами ЦБ, сек.", min_value=0.0, max_value=10.0,
+                            value=float(settings.get("bank_delay_seconds", 0.4)), step=0.1,
+                            key="credit_bank_delay_seconds",
+                        ))
+                        st.caption(
+                            "Используется официальная форма 0409135 Банка России: Н1.0, Н1.1, Н1.2, Н2, Н3 и Н4. "
+                            "Корпоративные Debt/EBITDA к банкам не применяются."
+                        )
         if st.button("Сохранить профиль модулей", use_container_width=True):
             st.success(f"Сохранено: {save_gui_config(config).relative_to(PROJECT_ROOT)}")
     return config
