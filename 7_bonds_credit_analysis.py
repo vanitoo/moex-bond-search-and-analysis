@@ -808,7 +808,21 @@ def main() -> int:
                     delay_seconds=max(0.0, args.bank_delay_seconds),
                 )
                 if not fetched_banks.empty:
-                    bank_metrics_table = fetched_banks
+                    bank_metrics_table = pd.concat(
+                        [bank_metrics_table, fetched_banks],
+                        ignore_index=True,
+                    ).reindex(columns=BANK_COLUMNS)
+                    bank_metrics_table["_key"] = (
+                        bank_metrics_table["ИНН"].astype(str).str.replace(r"\D", "", regex=True)
+                        + "|"
+                        + bank_metrics_table["Эмитент"].astype(str).str.strip().str.lower()
+                    )
+                    bank_metrics_table = (
+                        bank_metrics_table
+                        .drop_duplicates("_key", keep="last")
+                        .drop(columns=["_key"])
+                        .reset_index(drop=True)
+                    )
                     bank_metrics_table.to_excel(bank_metrics_path, index=False)
                 print(
                     "Банковские нормативы ЦБ РФ: "
