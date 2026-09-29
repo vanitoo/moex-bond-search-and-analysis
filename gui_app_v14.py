@@ -74,6 +74,8 @@ def render_buy_plan(run_dir: Path) -> None:
         confidence = str(base.deep_get(bond, "decision.confidence") or "")
         issuer = str(base.deep_get(bond, "credit.issuer") or "")
         issuer_type = str(base.deep_get(bond, "credit.issuer_type") or "")
+        negative = str(base.deep_get(bond, "decision.negative_factors") or "")
+        shortlist_reason = str(base.deep_get(bond, "decision.shortlist_reason") or "")
         default_selected = secid in shortlist if shortlist else decision.lower() not in {"не покупать", "ожидает данных"}
         rows.append({
             "Выбрать": default_selected,
@@ -87,13 +89,15 @@ def render_buy_plan(run_dir: Path) -> None:
             "Баллы": score,
             "YTM, %": base.deep_get(bond, "market.yield"),
             "Рейтинг": base.deep_get(bond, "credit.rating") or "—",
+            "Факторы снижения": negative or "—",
+            "Почему не shortlist": shortlist_reason or "—",
         })
 
     edited = st.data_editor(
         pd.DataFrame(rows),
         width="stretch",
         hide_index=True,
-        disabled=["SECID", "Название", "Эмитент", "Тип эмитента", "Уровень", "Уверенность", "Решение", "Баллы", "YTM, %", "Рейтинг"],
+        disabled=["SECID", "Название", "Эмитент", "Тип эмитента", "Уровень", "Уверенность", "Решение", "Баллы", "YTM, %", "Рейтинг", "Факторы снижения", "Почему не shortlist"],
         key="buy_plan_selector_v14",
     )
     selected = edited.loc[edited["Выбрать"] == True, "SECID"].astype(str).tolist() if not edited.empty else []
