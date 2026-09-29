@@ -196,6 +196,8 @@ def normalized_blocks(raw_modules: dict[str, dict[str, Any]]) -> dict[str, Any]:
         },
         "decision": {
             "score": as_float(first(decision, "Финальный балл", "Итоговый балл", "Оценка")),
+            "score_breakdown": first(decision, "Разбор балла"),
+            "points_to_strong": as_float(first(decision, "До сильного порога, баллов")),
             "status": first(decision, "Финальное решение", "Решение"),
             "tier": first(decision, "Уровень рекомендации"),
             "confidence": first(decision, "Уверенность решения"),
