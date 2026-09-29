@@ -252,6 +252,13 @@ def decide(row: pd.Series, enabled: set[str], source_name: str, rating_events: l
     else:
         decision, eligible, max_share = "Не покупать", False, "0%"
 
+    score_breakdown = " + ".join(
+        f"{name} {value:.0f}×{weight:g}" for name, value, weight in scores
+    )
+    score_breakdown += f" → {score}/100"
+    if rating_event_adjustment:
+        score_breakdown += f" (рейтинг-события {rating_event_adjustment:+d})"
+
     reasons.extend(f"{name}: {value:.0f}/100" for name, value, _ in scores)
     if rating_event_adjustment:
         reasons.append(f"Рейтинговые события: {rating_event_adjustment:+d} баллов")
@@ -270,6 +277,8 @@ def decide(row: pd.Series, enabled: set[str], source_name: str, rating_events: l
         "Финальное решение": decision,
         "Допущена в портфель": "ДА" if eligible else "НЕТ",
         "Финальный балл": score,
+        "Разбор балла": score_breakdown,
+        "До сильного порога, баллов": max(0, 86 - score),
         "Максимальная доля": max_share,
         "Максимум к покупке, руб.": round(max_amount or 0, 2),
         "Максимум к покупке, шт.": max_qty,
