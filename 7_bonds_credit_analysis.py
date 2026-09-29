@@ -632,8 +632,24 @@ def main() -> int:
         if not args.no_fetch_financials:
             try:
                 cache_dir = args.data_dir / "financial_cache" / "fns_bfo"
+                corporate_inns: list[str] = []
+                issuer_type_counts: dict[str, int] = {}
+                for _, source_row in deep.iterrows():
+                    matched_rating = best_match(source_row, ratings)
+                    model = classify_issuer(
+                        source_row.get("Полное наименование"),
+                        "" if matched_rating is None else matched_rating.get("Эмитент"),
+                    )
+                    issuer_type_counts[model.label] = issuer_type_counts.get(model.label, 0) + 1
+                    if model.key == "corporate":
+                        corporate_inns.append(str(source_row.get("ИНН") or ""))
+
+                print(
+                    "Типы эмитентов перед финансовым сбором: "
+                    + ", ".join(f"{key}: {value}" for key, value in sorted(issuer_type_counts.items()))
+                )
                 fetched_financials, financial_stats = fetch_financials_for_inns(
-                    deep.get("ИНН", pd.Series(dtype=str)).tolist(),
+                    corporate_inns,
                     cache_dir=cache_dir,
                     cache_days=max(0, args.financial_cache_days),
                     workers=max(1, min(args.financial_workers, 4)),
