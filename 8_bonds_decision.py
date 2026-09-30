@@ -43,6 +43,82 @@ def yes(value: Any) -> bool:
     return normalize(value) in {"да", "true", "1", "yes"}
 
 
+def _issuer_key(row: pd.Series | dict[str, Any]) -> str:
+    inn = str(row.get("ИНН") or row.get("inn") or "").strip().replace(" ", "")
+    if inn and inn.lower() not in {"nan", "none"}:
+        return f"inn:{inn}"
+    issuer = str(row.get("Эмитент") or row.get("issuer") or "").strip().casefold()
+    if issuer:
+        return f"issuer:{issuer}"
+    secid = str(row.get("Код ценной бумаги") or row.get("secid") or "").strip().upper()
+    return f"secid:{secid}"
+
+
+def _negative_factors(row: pd.Series) -> str:
+    factors: list[str] = []
+    blockers = str(row.get("Блокеры") or "").strip()
+    warnings = str(row.get("Предупреждения") or "").strip()
+    credit_missing = str(row.get("Недостающие кредитные данные") or "").strip()
+    no_data = str(row.get("Модули без данных") or "").strip()
+    rating_adj = safe_float(row.get("Корректировка за рейтинг"), 0) or 0
+
+    if blockers and blockers != "—":
+        factors.append("СТОП: " + blockers)
+    if warnings and warnings != "—":
+        factors.append(warnings)
+    if credit_missing and credit_missing != "—":
+        factors.append("Кредитные данные: " + credit_missing)
+    if no_data and no_data != "—":
+        factors.append("Нет данных модулей: " + no_data)
+    if rating_adj < 0:
+        factors.append(f"Рейтинговые события: {rating_adj:.0f} балл.")
+    return "; ".join(dict.fromkeys(factors)) or "Явных отрицательных факторов не зафиксировано"
+
+
+def _annotate_shortlist_reasons(result: pd.DataFrame, shortlist: dict[str, Any]) -> pd.DataFrame:
+    frame = result.copy()
+    selected = shortlist.get("shortlist", [])
+    selected_ids = {str(item.get("secid") or "") for item in selected}
+    selected_by_issuer = {_issuer_key(item): str(item.get("secid") or "") for item in selected}
+    strong_score = int(shortlist.get("thresholds", {}).get("strong_score", 86))
+    max_size = int(shortlist.get("thresholds", {}).get("max_shortlist", 12))
+
+    reasons: list[str] = []
+    factors: list[str] = []
+    for _, row in frame.iterrows():
+        secid = str(row.get("Код ценной бумаги") or "")
+        score = int(round(safe_float(row.get("Финальный балл"), 0) or 0))
+        admitted = str(row.get("Допущена в портфель") or "").strip().upper() == "ДА"
+        factors.append(_negative_factors(row))
+
+        if secid in selected_ids:
+            reasons.append("Выбран в финальный shortlist")
+            continue
+        if not admitted:
+            blocker = str(row.get("Блокеры") or "").strip()
+            if blocker and blocker != "—":
+                reasons.append("Не допущен: " + blocker)
+            else:
+                reasons.append(f"Не допущен: финальный балл {score} ниже порога покупки 82")
+            continue
+        if score < strong_score:
+            reasons.append(f"Допущен, но балл {score} ниже порога сильного кандидата {strong_score}")
+            continue
+
+        chosen = selected_by_issuer.get(_issuer_key(row))
+        if chosen and chosen != secid:
+            reasons.append(f"Дубликат эмитента: в shortlist выбран выпуск {chosen}")
+        elif len(selected_ids) >= max_size:
+            reasons.append(f"Сильный кандидат, но не вошёл в лимит shortlist {max_size}")
+        else:
+            reasons.append("Сильный кандидат вне shortlist по итоговому ранжированию")
+
+    frame["Почему потерял баллы"] = factors
+    frame["Почему не shortlist"] = reasons
+    frame["В финальном shortlist"] = frame["Код ценной бумаги"].astype(str).isin(selected_ids).map({True: "ДА", False: "НЕТ"})
+    return frame
+
+
 def load_optional(root: Path, pattern: str, sheet: str | int = 0) -> pd.DataFrame:
     path = latest(root, pattern, required=False)
     if not path:
@@ -176,6 +252,13 @@ def decide(row: pd.Series, enabled: set[str], source_name: str, rating_events: l
     else:
         decision, eligible, max_share = "Не покупать", False, "0%"
 
+    score_breakdown = " + ".join(
+        f"{name} {value:.0f}×{weight:g}" for name, value, weight in scores
+    )
+    score_breakdown += f" → {score}/100"
+    if rating_event_adjustment:
+        score_breakdown += f" (рейтинг-события {rating_event_adjustment:+d})"
+
     reasons.extend(f"{name}: {value:.0f}/100" for name, value, _ in scores)
     if rating_event_adjustment:
         reasons.append(f"Рейтинговые события: {rating_event_adjustment:+d} баллов")
@@ -194,6 +277,8 @@ def decide(row: pd.Series, enabled: set[str], source_name: str, rating_events: l
         "Финальное решение": decision,
         "Допущена в портфель": "ДА" if eligible else "НЕТ",
         "Финальный балл": score,
+        "Разбор балла": score_breakdown,
+        "До сильного порога, баллов": max(0, 86 - score),
         "Максимальная доля": max_share,
         "Максимум к покупке, руб.": round(max_amount or 0, 2),
         "Максимум к покупке, шт.": max_qty,
@@ -259,15 +344,18 @@ def main() -> None:
     html.write_text(result.to_html(index=False), encoding="utf-8")
     json_path.write_text(json.dumps(candidates.to_dict(orient="records"), ensure_ascii=False, indent=2), encoding="utf-8")
     shortlist = write_shortlist(result, out, stamp)
-    shortlist_ids = set(item["secid"] for item in shortlist["shortlist"])
-    result["В финальном shortlist"] = result["Код ценной бумаги"].astype(str).isin(shortlist_ids).map({True: "ДА", False: "НЕТ"})
-    candidates["В финальном shortlist"] = candidates["Код ценной бумаги"].astype(str).isin(shortlist_ids).map({True: "ДА", False: "НЕТ"})
+    result = _annotate_shortlist_reasons(result, shortlist)
+    candidates = result[result["Допущена в портфель"] == "ДА"].copy()
     # Перезаписываем Excel/HTML уже с отметкой shortlist.
     with pd.ExcelWriter(xlsx, engine="openpyxl") as writer:
         result.to_excel(writer, sheet_name="Решения", index=False)
         candidates.to_excel(writer, sheet_name="Кандидаты в портфель", index=False)
         pd.DataFrame({"Параметр": ["Стратегия", "Включённые модули", "Базовый источник", "Рейтинговых событий"], "Значение": [config.get("strategy"), ", ".join(sorted(enabled)), source_name, len(rating_events)]}).to_excel(writer, sheet_name="Конфигурация", index=False)
     html.write_text(result.to_html(index=False), encoding="utf-8")
+    json_path.write_text(
+        json.dumps(candidates.to_dict(orient="records"), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
     print(f"Обработано уникальных SECID: {len(result)}")
     print(f"Учтено рейтинговых событий: {len(rating_events)}")
     print(f"Допущено к покупке: {shortlist['admitted']}")

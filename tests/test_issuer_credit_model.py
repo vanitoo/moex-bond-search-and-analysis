@@ -58,3 +58,26 @@ def test_corporate_model_still_requires_financials():
     model = classify_issuer("АЛРОСА 001Р-01")
     result = credit.evaluate(_source("АЛРОСА 001Р-01"), _rating(), None, model)
     assert "Финансовая отчётность" in result.missing
+
+
+def test_bank_model_uses_cbr_metrics_when_available():
+    model = classify_issuer("Сбербанк ПАО 001Р")
+    bank_metrics = pd.Series({
+        "Н1.0": 13.0,
+        "Н1.1": 8.0,
+        "Н1.2": 10.0,
+        "Н2": 45.0,
+        "Н3": 95.0,
+        "Н4": 70.0,
+    })
+    result = credit.evaluate(
+        _source("Сбербанк ПАО 001Р"),
+        _rating(),
+        None,
+        model,
+        bank_metrics,
+    )
+    assert "Специализированные банковские показатели ЦБ РФ" not in result.missing
+    assert result.financial_score == 30
+    assert result.confidence == "Высокая"
+    assert result.metrics["Н1.0"] == 13.0

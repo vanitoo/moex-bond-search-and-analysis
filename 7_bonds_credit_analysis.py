@@ -45,6 +45,13 @@ from moex_bond_search_and_analysis.issuer_credit_model import (
     IssuerCreditModel,
     classify_issuer,
 )
+from moex_bond_search_and_analysis.cbr_banks import (
+    BANK_COLUMNS,
+    DEFAULT_BANK_CACHE_DAYS,
+    DEFAULT_BANK_DELAY_SECONDS,
+    fetch_bank_metrics_for_issuers,
+    score_bank_metrics,
+)
 
 
 RATING_TEMPLATE_COLUMNS = [
@@ -250,6 +257,7 @@ def evaluate(
     rating: pd.Series | None,
     fin: pd.Series | None,
     model: IssuerCreditModel,
+    bank_metrics: pd.Series | None = None,
 ) -> CreditResult:
     positives: list[str] = []
     risks: list[str] = []
@@ -379,6 +387,31 @@ def evaluate(
             + completeness_score
             - penalty
         )
+    elif model.key == "bank" and bank_metrics is not None:
+        bank_score, bank_positives, bank_risks, bank_hard_stop, bank_completeness = score_bank_metrics(bank_metrics)
+        positives.extend(bank_positives)
+        risks.extend(bank_risks)
+        hard_stop = hard_stop or bank_hard_stop
+        financial_score = bank_score
+        completeness_score = bank_completeness
+        metrics.update({
+            "Н1.0": safe_float(bank_metrics.get("Н1.0")),
+            "Н1.1": safe_float(bank_metrics.get("Н1.1")),
+            "Н1.2": safe_float(bank_metrics.get("Н1.2")),
+            "Н2": safe_float(bank_metrics.get("Н2")),
+            "Н3": safe_float(bank_metrics.get("Н3")),
+            "Н4": safe_float(bank_metrics.get("Н4")),
+        })
+        if bank_completeness < 7:
+            missing.append("Часть обязательных нормативов ЦБ РФ")
+        positives.append("Применена банковская модель по форме 0409135 Банка России")
+        final_score = round(
+            second_score * 0.30
+            + rating_score
+            + bank_score
+            + completeness_score
+            - penalty
+        )
     else:
         if model.specialist_data_label:
             missing.append(model.specialist_data_label)
@@ -428,7 +461,9 @@ def evaluate(
     else:
         risk_level, max_share = "Приемлемый по доступным данным", "до 5%"
 
-    if model.key != "corporate" and model.specialist_data_label:
+    if model.key == "bank" and bank_metrics is not None:
+        confidence = "Высокая" if completeness_score >= 8 and rating_value else "Средняя" if rating_value else "Низкая"
+    elif model.key != "corporate" and model.specialist_data_label:
         confidence = "Средняя" if rating_value else "Низкая"
     else:
         confidence = "Высокая" if completeness_score >= 9 else "Средняя" if completeness_score >= 6 else "Низкая"
@@ -440,7 +475,12 @@ def evaluate(
     )
 
 
-def build_analysis(deep: pd.DataFrame, ratings: pd.DataFrame, financials: pd.DataFrame) -> pd.DataFrame:
+def build_analysis(
+    deep: pd.DataFrame,
+    ratings: pd.DataFrame,
+    financials: pd.DataFrame,
+    bank_metrics_table: pd.DataFrame | None = None,
+) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     for index, (_, source) in enumerate(deep.iterrows(), start=1):
         name = str(source.get("Полное наименование") or "")
@@ -453,7 +493,10 @@ def build_analysis(deep: pd.DataFrame, ratings: pd.DataFrame, financials: pd.Dat
             "" if rating is None else rating.get("Эмитент"),
             "" if fin is None else fin.get("Эмитент"),
         )
-        result = evaluate(source, rating, fin, model)
+        bank_metrics = None
+        if model.key == "bank" and bank_metrics_table is not None and not bank_metrics_table.empty:
+            bank_metrics = best_match(source, bank_metrics_table)
+        result = evaluate(source, rating, fin, model, bank_metrics)
         metrics = result.metrics
         used_fin = fin if model.key == "corporate" else None
         rows.append({
@@ -485,6 +528,12 @@ def build_analysis(deep: pd.DataFrame, ratings: pd.DataFrame, financials: pd.Dat
             "Маржа EBITDA": metrics["Маржа EBITDA"],
             "Маржа чистой прибыли": metrics["Маржа чистой прибыли"],
             "OCF/Долг": metrics["OCF/Долг"],
+            "Н1.0": metrics.get("Н1.0"),
+            "Н1.1": metrics.get("Н1.1"),
+            "Н1.2": metrics.get("Н1.2"),
+            "Н2": metrics.get("Н2"),
+            "Н3": metrics.get("Н3"),
+            "Н4": metrics.get("Н4"),
             "Баллы финансов": result.financial_score,
             "Полнота данных": result.completeness_score,
             "Штрафы": result.penalty,
@@ -499,6 +548,8 @@ def build_analysis(deep: pd.DataFrame, ratings: pd.DataFrame, financials: pd.Dat
             "Недостающие данные": "; ".join(result.missing) or "—",
             "Источник рейтинга": "" if rating is None else rating.get("Источник"),
             "Источник финансов": "" if used_fin is None else used_fin.get("Источник"),
+            "Источник банковских данных": "" if bank_metrics is None else bank_metrics.get("Источник"),
+            "Дата банковских данных": "" if bank_metrics is None else bank_metrics.get("Дата отчётности"),
             "_class": result.recommendation_class,
         })
     return pd.DataFrame(rows).sort_values(
@@ -516,7 +567,7 @@ def write_excel(df: pd.DataFrame, output: Path, source: Path) -> None:
         "Описание": [
             "Третий слой: методика выбирается по типу эмитента, чтобы не применять корпоративный Debt/EBITDA там, где он неприменим.",
             "30% второй слой + до 30 баллов рейтинг + до 30 баллов корпоративные финансы + до 10 баллов полнота.",
-            "55% второй слой + 35% нормализованный рейтинг + до 10% полнота; до подключения показателей ЦБ уверенность не выше средней.",
+            "При наличии формы 0409135: 30% второй слой + до 30 баллов рейтинг + до 30 баллов за Н1.0/Н1.1/Н1.2/Н2/Н3/Н4 + до 10 баллов полнота; при отсутствии формы используется осторожный rating-only fallback.",
             "55% второй слой + 35% нормализованный рейтинг + до 10% полнота; до подключения бюджета/госдолга уверенность не выше средней.",
             "55% второй слой + 35% нормализованный рейтинг + до 10% полнота; до подключения структуры транша уверенность не выше средней.",
             "Стоп второго слоя и рейтинги CCC/CC/C/D автоматически запрещают покупку.",
@@ -555,6 +606,20 @@ def write_html(df: pd.DataFrame, output: Path, source: Path) -> None:
     for _, row in df.iterrows():
         css = row.get("_class", "wait")
         secid = html.escape(str(row["Код ценной бумаги"]))
+        if str(row.get("Ключ модели") or "") == "bank":
+            metric_grid = f"""
+            <div><b>Н1.0</b><span>{fmt(row.get('Н1.0'))}%</span></div>
+            <div><b>Н1.1 / Н1.2</b><span>{fmt(row.get('Н1.1'))}% / {fmt(row.get('Н1.2'))}%</span></div>
+            <div><b>Н2</b><span>{fmt(row.get('Н2'))}%</span></div>
+            <div><b>Н3</b><span>{fmt(row.get('Н3'))}%</span></div>
+            <div><b>Н4</b><span>{fmt(row.get('Н4'))}%</span></div>
+            """
+        else:
+            metric_grid = f"""
+            <div><b>Чистый долг/EBITDA</b><span>{fmt(row['Чистый долг/EBITDA'])}</span></div>
+            <div><b>Покрытие процентов</b><span>{fmt(row['Покрытие процентов'])}</span></div>
+            <div><b>Текущая ликвидность</b><span>{fmt(row['Текущая ликвидность'])}</span></div>
+            """
         cards.append(f"""
         <article class="bond {css}" data-class="{css}">
           <div class="head"><div><h2>{html.escape(str(row['Полное наименование']))}</h2><a href="https://www.moex.com/ru/issue.aspx?board=TQCB&code={secid}" target="_blank">{secid}</a></div><div class="score">{int(row['Итоговый кредитный балл'])}/100</div></div>
@@ -562,10 +627,8 @@ def write_html(df: pd.DataFrame, output: Path, source: Path) -> None:
           <div class="muted">{html.escape(str(row['Тип эмитента']))} · {html.escape(str(row['Методика кредитного анализа']))}</div>
           <div class="grid">
             <div><b>Рейтинг</b><span>{html.escape(str(row['Рейтинг'] or '—'))} · {html.escape(str(row['Агентство'] or '—'))}</span></div>
-            <div><b>Чистый долг/EBITDA</b><span>{fmt(row['Чистый долг/EBITDA'])}</span></div>
-            <div><b>Покрытие процентов</b><span>{fmt(row['Покрытие процентов'])}</span></div>
-            <div><b>Текущая ликвидность</b><span>{fmt(row['Текущая ликвидность'])}</span></div>
-            <div><b>Финансовые баллы</b><span>{int(row['Баллы финансов'])}/30</span></div>
+            {metric_grid}
+            <div><b>Финансовые/секторные баллы</b><span>{int(row['Баллы финансов'])}/30</span></div>
             <div><b>Уверенность</b><span>{html.escape(str(row['Уверенность']))}</span></div>
           </div>
           <div class="cols"><section><h3>Плюсы</h3>{list_html(row['Положительные факторы'], 'good')}</section><section><h3>Риски</h3>{list_html(row['Риски'], 'bad')}</section><section><h3>Не хватает</h3>{list_html(row['Недостающие данные'])}</section></div>
@@ -613,6 +676,23 @@ def main() -> int:
         type=int,
         default=DEFAULT_RETRIES,
         help="Количество попыток на один запрос к ГИР БО ФНС",
+    )
+    parser.add_argument(
+        "--no-fetch-bank-metrics",
+        action="store_true",
+        help="Не обновлять обязательные нормативы банков из формы 0409135 Банка России",
+    )
+    parser.add_argument(
+        "--bank-cache-days",
+        type=int,
+        default=DEFAULT_BANK_CACHE_DAYS,
+        help="Сколько дней считать кэш банковских нормативов ЦБ свежим",
+    )
+    parser.add_argument(
+        "--bank-delay-seconds",
+        type=float,
+        default=DEFAULT_BANK_DELAY_SECONDS,
+        help="Пауза между запросами по банкам к веб-сервису Банка России",
     )
     args = parser.parse_args()
     try:
@@ -694,7 +774,76 @@ def main() -> int:
                     "Используется существующий локальный файл."
                 )
 
-        result = build_analysis(deep, ratings, financials)
+        bank_metrics_path = args.data_dir / "issuer_bank_metrics.xlsx"
+        bank_metrics_table = (
+            load_optional_table(bank_metrics_path, BANK_COLUMNS)
+            if bank_metrics_path.exists()
+            else pd.DataFrame(columns=BANK_COLUMNS)
+        )
+        if not args.no_fetch_bank_metrics:
+            bank_issuers: list[dict[str, str]] = []
+            seen_banks: set[str] = set()
+            for _, source_row in deep.iterrows():
+                matched_rating = best_match(source_row, ratings)
+                model = classify_issuer(
+                    source_row.get("Полное наименование"),
+                    "" if matched_rating is None else matched_rating.get("Эмитент"),
+                )
+                if model.key != "bank":
+                    continue
+                issuer_name = (
+                    "" if matched_rating is None else str(matched_rating.get("Эмитент") or "")
+                ) or str(source_row.get("Полное наименование") or "")
+                inn = str(source_row.get("ИНН") or "")
+                key = re.sub(r"\D", "", inn) or normalize(issuer_name)
+                if key in seen_banks:
+                    continue
+                seen_banks.add(key)
+                bank_issuers.append({"name": issuer_name, "inn": inn})
+            try:
+                fetched_banks, bank_stats = fetch_bank_metrics_for_issuers(
+                    bank_issuers,
+                    cache_dir=args.data_dir / "bank_cache" / "cbr_f135",
+                    cache_days=max(0, args.bank_cache_days),
+                    delay_seconds=max(0.0, args.bank_delay_seconds),
+                )
+                if not fetched_banks.empty:
+                    bank_metrics_table = pd.concat(
+                        [bank_metrics_table, fetched_banks],
+                        ignore_index=True,
+                    ).reindex(columns=BANK_COLUMNS)
+                    bank_metrics_table["_key"] = (
+                        bank_metrics_table["ИНН"].astype(str).str.replace(r"\D", "", regex=True)
+                        + "|"
+                        + bank_metrics_table["Эмитент"].astype(str).str.strip().str.lower()
+                    )
+                    bank_metrics_table = (
+                        bank_metrics_table
+                        .drop_duplicates("_key", keep="last")
+                        .drop(columns=["_key"])
+                        .reset_index(drop=True)
+                    )
+                    bank_metrics_table.to_excel(bank_metrics_path, index=False)
+                print(
+                    "Банковские нормативы ЦБ РФ: "
+                    f"запрошено {bank_stats.requested}, получено {bank_stats.fetched}, "
+                    f"из кэша {bank_stats.cached}, не найдено {bank_stats.not_found}, "
+                    f"ошибок {len(bank_stats.errors)}. "
+                    f"Кэш: {bank_metrics_path}"
+                )
+                if bank_stats.errors:
+                    print(
+                        "Внимание: часть банковских данных получить не удалось: "
+                        + "; ".join(bank_stats.errors[:10])
+                        + ("; ..." if len(bank_stats.errors) > 10 else "")
+                    )
+            except (OSError, ValueError, RuntimeError, requests.RequestException) as exc:
+                print(
+                    f"Внимание: обновление банковских нормативов ЦБ не удалось: {exc}. "
+                    "Используется существующий локальный файл, если он есть."
+                )
+
+        result = build_analysis(deep, ratings, financials, bank_metrics_table)
         type_counts = result["Тип эмитента"].value_counts().to_dict()
         print(
             "Кредитные модели: "

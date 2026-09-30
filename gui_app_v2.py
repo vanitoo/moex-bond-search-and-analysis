@@ -203,6 +203,27 @@ def config_editor() -> dict[str, Any]:
                             "Источник — публичный ГИР БО ФНС. Для банков и части финансовых организаций "
                             "данные могут отсутствовать; такие позиции остаются с пониженной уверенностью."
                         )
+                    settings["fetch_bank_metrics"] = st.toggle(
+                        "Получать банковские нормативы из Банка России",
+                        value=bool(settings.get("fetch_bank_metrics", True)),
+                        key="credit_fetch_bank_metrics",
+                    )
+                    if settings["fetch_bank_metrics"]:
+                        b1, b2 = st.columns(2)
+                        settings["bank_cache_days"] = int(b1.number_input(
+                            "Кэш банковских нормативов, дней", min_value=0, max_value=365,
+                            value=int(settings.get("bank_cache_days", 7)), step=1,
+                            key="credit_bank_cache_days",
+                        ))
+                        settings["bank_delay_seconds"] = float(b2.number_input(
+                            "Пауза между запросами ЦБ, сек.", min_value=0.0, max_value=10.0,
+                            value=float(settings.get("bank_delay_seconds", 0.4)), step=0.1,
+                            key="credit_bank_delay_seconds",
+                        ))
+                        st.caption(
+                            "Используется официальная форма 0409135 Банка России: Н1.0, Н1.1, Н1.2, Н2, Н3 и Н4. "
+                            "Корпоративные Debt/EBITDA к банкам не применяются."
+                        )
         if st.button("Сохранить профиль модулей", use_container_width=True):
             st.success(f"Сохранено: {save_gui_config(config).relative_to(PROJECT_ROOT)}")
     return config
@@ -404,6 +425,15 @@ def render_bond_explanation(bond: dict[str, Any]) -> None:
     title = bond_label(bond)
     st.markdown(f"**{title}**")
     st.write(f"Решение: **{decision}**" + (f" · балл **{score:.0f}**" if score is not None else ""))
+    breakdown = deep_get(bond, "decision.score_breakdown")
+    points_to_strong = deep_get(bond, "decision.points_to_strong")
+    if breakdown:
+        st.caption("Расчёт: " + str(breakdown))
+    try:
+        if points_to_strong is not None and float(points_to_strong) > 0:
+            st.caption(f"До сильного порога 86: {float(points_to_strong):.0f} балл.")
+    except (TypeError, ValueError):
+        pass
     events = bond.get("modules", {})
     risks = []
     good = []
@@ -420,6 +450,13 @@ def render_bond_explanation(bond: dict[str, Any]) -> None:
         st.warning("Что проверить: " + " | ".join(risks[:4]))
     elif events:
         st.success("По журналу включённых модулей предупреждений нет.")
+
+    negative = deep_get(bond, "decision.negative_factors")
+    shortlist_reason = deep_get(bond, "decision.shortlist_reason")
+    if negative and str(negative) not in {"—", "Явных отрицательных факторов не зафиксировано"}:
+        st.caption("Факторы снижения: " + str(negative))
+    if shortlist_reason:
+        st.caption("Shortlist: " + str(shortlist_reason))
 
 
 def render_candidates(run_dir: Path) -> None:

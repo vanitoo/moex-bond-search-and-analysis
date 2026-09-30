@@ -31,7 +31,7 @@ def test_stage_specific_arguments():
     assert run_pipeline.stage_arguments("4c_bonds_ofz_spread.py", 0.1, root, CONFIG) == []
     assert run_pipeline.stage_arguments(
         "7_bonds_credit_analysis.py", 0.1, root, CONFIG
-    ) == ["--data-dir", str(root / "data"), "--financial-cache-days", "35", "--financial-workers", "1", "--financial-delay-seconds", "1.2", "--financial-retries", "4"]
+    ) == ["--data-dir", str(root / "data"), "--financial-cache-days", "35", "--financial-workers", "1", "--financial-delay-seconds", "1.2", "--financial-retries", "4", "--bank-cache-days", "7", "--bank-delay-seconds", "0.4"]
 
 
 def test_credit_stage_uses_fresh_ratings_cache(tmp_path: Path):
@@ -52,6 +52,8 @@ def test_credit_stage_uses_fresh_ratings_cache(tmp_path: Path):
         "--financial-workers", "1",
         "--financial-delay-seconds", "1.2",
         "--financial-retries", "4",
+        "--bank-cache-days", "7",
+        "--bank-delay-seconds", "0.4",
     ]
 
 
@@ -69,7 +71,7 @@ def test_credit_stage_refresh_flag_ignores_cache(tmp_path: Path):
         refresh_ratings=True,
     )
 
-    assert arguments == ["--data-dir", str(data_dir), "--financial-cache-days", "35", "--financial-workers", "1", "--financial-delay-seconds", "1.2", "--financial-retries", "4"]
+    assert arguments == ["--data-dir", str(data_dir), "--financial-cache-days", "35", "--financial-workers", "1", "--financial-delay-seconds", "1.2", "--financial-retries", "4", "--bank-cache-days", "7", "--bank-delay-seconds", "0.4"]
 
 
 def test_old_ratings_cache_is_not_reused(tmp_path: Path):
@@ -88,7 +90,7 @@ def test_old_ratings_cache_is_not_reused(tmp_path: Path):
         ratings_cache_hours=24,
     )
 
-    assert arguments == ["--data-dir", str(data_dir), "--financial-cache-days", "35", "--financial-workers", "1", "--financial-delay-seconds", "1.2", "--financial-retries", "4"]
+    assert arguments == ["--data-dir", str(data_dir), "--financial-cache-days", "35", "--financial-workers", "1", "--financial-delay-seconds", "1.2", "--financial-retries", "4", "--bank-cache-days", "7", "--bank-delay-seconds", "0.4"]
 
 
 def test_credit_stage_can_disable_financial_fetch(tmp_path: Path):
@@ -107,4 +109,20 @@ def test_credit_stage_can_disable_financial_fetch(tmp_path: Path):
         "--financial-workers", "2",
         "--financial-delay-seconds", "1.2",
         "--financial-retries", "4",
+        "--bank-cache-days", "7",
+        "--bank-delay-seconds", "0.4",
     ]
+
+
+def test_credit_stage_can_disable_bank_metrics(tmp_path: Path):
+    config = {"modules": {"credit": {"fetch_bank_metrics": False}}}
+    arguments = run_pipeline.stage_arguments(
+        "7_bonds_credit_analysis.py",
+        0.1,
+        tmp_path,
+        config,
+        refresh_ratings=True,
+    )
+    assert "--no-fetch-bank-metrics" in arguments
+    assert ["--bank-cache-days", "7"] == arguments[-4:-2]
+    assert ["--bank-delay-seconds", "0.4"] == arguments[-2:]
