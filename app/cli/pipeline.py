@@ -16,16 +16,16 @@ for _path in (str(APP_CORE), str(APP_PORTFOLIO), str(APP_ROOT), str(SRC_ROOT), s
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-from master_dataset import build_master_dataset
-from runtime_env import build_subprocess_env
-from run_paths import latest_pipeline_run, new_run_dir
-from stage_arguments import (
+from app.core.master_dataset import build_master_dataset
+from app.core.runtime_env import build_subprocess_env
+from app.core.run_paths import latest_pipeline_run, new_run_dir
+from app.core.stage_arguments import (
     DEFAULT_RATINGS_CACHE_HOURS,
     actual_script,
     stage_arguments,
 )
-from stage_registry import MODULE_DESCRIPTIONS, PIPELINE_STAGE_SCRIPTS
-from pipeline_architecture import (
+from app.core.stage_registry import MODULE_DESCRIPTIONS, PIPELINE_STAGE_SCRIPTS
+from app.core.pipeline_architecture import (
     BY_SCRIPT,
     append_event,
     collect_stage,
