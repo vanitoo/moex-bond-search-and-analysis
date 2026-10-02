@@ -5,7 +5,7 @@ from typing import Any
 
 import pandas as pd
 
-from pipeline_common import safe_float
+from app.core.pipeline_common import safe_float
 from moex_bond_search_and_analysis.rating_signal import build_rating_signal
 
 
