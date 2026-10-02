@@ -5,10 +5,10 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-import base
-import portfolio_view
-from portfolio_recommendation import recommend_candidate
-from portfolio_store import list_portfolios, load_portfolio
+from app.gui.features import base
+from app.gui.features import portfolio_view
+from app.portfolio.portfolio_recommendation import recommend_candidate
+from app.portfolio.portfolio_store import list_portfolios, load_portfolio
 
 
 PORTFOLIO_DIR = base.PROJECT_ROOT / "data" / "virtual_portfolios"
