@@ -9,14 +9,12 @@ import pandas as pd
 
 from pipeline_common import clean_secid_rows, latest, normalize, safe_float
 
-
 from stage_registry import BY_SCRIPT, MODULES, ModuleSpec
-
 
 
 def load_config(path: Path | None) -> dict[str, Any]:
     if path is None:
-        path = Path(__file__).resolve().parent.parent / "configs" / "balanced.json"
+        path = Path(__file__).resolve().parents[2] / "configs" / "balanced.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
     payload.setdefault("strategy", path.stem)
     payload.setdefault("modules", {})
