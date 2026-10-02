@@ -1,9 +1,17 @@
 from __future__ import annotations
 
 import argparse
+import sys
 import time
 from datetime import date
 from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+APP_ROOT = PROJECT_ROOT / "app"
+SRC_ROOT = PROJECT_ROOT / "src"
+for _path in (str(APP_ROOT), str(SRC_ROOT), str(PROJECT_ROOT)):
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
 from urllib.parse import quote
 
 import pandas as pd
