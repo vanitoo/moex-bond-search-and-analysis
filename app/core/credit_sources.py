@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 import requests
 
-from credit_engine import best_match, normalize
+from app.core.credit_engine import best_match, normalize
 from moex_bond_search_and_analysis.cbr_banks import (
     BANK_COLUMNS,
     fetch_bank_metrics_for_issuers,
