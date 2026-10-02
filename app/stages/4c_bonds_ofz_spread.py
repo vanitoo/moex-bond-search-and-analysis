@@ -19,7 +19,7 @@ from typing import Any
 import pandas as pd
 import requests
 
-from pipeline_common import dated_name, latest, safe_float
+from app.core.pipeline_common import dated_name, latest, safe_float
 
 MOEX_BASE = "https://iss.moex.com/iss"
 OFZ_BOARD = "TQOB"
