@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
-from portfolio_store import upsert_position
+from app.portfolio.portfolio_store import upsert_position
 
 
 def recalculate_allocation_plan(
