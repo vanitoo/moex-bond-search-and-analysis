@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 import pandas as pd
 
@@ -19,109 +17,10 @@ for _path in (str(CORE), str(PORTFOLIO), str(SRC), str(ROOT)):
         sys.path.insert(0, _path)
 
 from pipeline_architecture import is_enabled, load_config
-from pipeline_common import clean_secid_rows, latest, merge_by_secid, safe_float
-from moex_bond_search_and_analysis.rating_signal import build_rating_signal, load_rating_events
+from pipeline_common import clean_secid_rows, latest, merge_by_secid
+from moex_bond_search_and_analysis.rating_signal import load_rating_events
 from portfolio_shortlist import annotate_decisions, write_shortlist
-
-RATING_ORDER = ["D", "C", "CC", "CCC", "B-", "B", "B+", "BB-", "BB", "BB+", "BBB-", "BBB", "BBB+", "A-", "A", "A+", "AA-", "AA", "AA+", "AAA"]
-CRITICAL = ("дефолт", "просроч", "банкрот", "не покрывает процент", "отрицательный операционный")
-
-
-def normalize(value: Any) -> str:
-    if value is None or pd.isna(value):
-        return ""
-    return re.sub(r"\s+", " ", str(value).strip().lower().replace("ё", "е"))
-
-
-def rating(value: Any) -> str:
-    if value is None or pd.isna(value):
-        return ""
-    raw = str(value).strip()
-    if not raw or raw.lower() in {"nan", "none", "null", "—", "-"}:
-        return ""
-    text = re.sub(r"[^A-Z+\-]", "", raw.upper().replace("(RU)", "").replace("RU", ""))
-    return text if text in RATING_ORDER else ""
-
-
-def yes(value: Any) -> bool:
-    return normalize(value) in {"да", "true", "1", "yes"}
-
-
-def _issuer_key(row: pd.Series | dict[str, Any]) -> str:
-    inn = str(row.get("ИНН") or row.get("inn") or "").strip().replace(" ", "")
-    if inn and inn.lower() not in {"nan", "none"}:
-        return f"inn:{inn}"
-    issuer = str(row.get("Эмитент") or row.get("issuer") or "").strip().casefold()
-    if issuer:
-        return f"issuer:{issuer}"
-    secid = str(row.get("Код ценной бумаги") or row.get("secid") or "").strip().upper()
-    return f"secid:{secid}"
-
-
-def _negative_factors(row: pd.Series) -> str:
-    factors: list[str] = []
-    blockers = str(row.get("Блокеры") or "").strip()
-    warnings = str(row.get("Предупреждения") or "").strip()
-    credit_missing = str(row.get("Недостающие кредитные данные") or "").strip()
-    no_data = str(row.get("Модули без данных") or "").strip()
-    rating_adj = safe_float(row.get("Корректировка за рейтинг"), 0) or 0
-
-    if blockers and blockers != "—":
-        factors.append("СТОП: " + blockers)
-    if warnings and warnings != "—":
-        factors.append(warnings)
-    if credit_missing and credit_missing != "—":
-        factors.append("Кредитные данные: " + credit_missing)
-    if no_data and no_data != "—":
-        factors.append("Нет данных модулей: " + no_data)
-    if rating_adj < 0:
-        factors.append(f"Рейтинговые события: {rating_adj:.0f} балл.")
-    return "; ".join(dict.fromkeys(factors)) or "Явных отрицательных факторов не зафиксировано"
-
-
-def _annotate_shortlist_reasons(result: pd.DataFrame, shortlist: dict[str, Any]) -> pd.DataFrame:
-    frame = result.copy()
-    selected = shortlist.get("shortlist", [])
-    selected_ids = {str(item.get("secid") or "") for item in selected}
-    selected_by_issuer = {_issuer_key(item): str(item.get("secid") or "") for item in selected}
-    strong_score = int(shortlist.get("thresholds", {}).get("strong_score", 86))
-    max_size = int(shortlist.get("thresholds", {}).get("max_shortlist", 12))
-
-    reasons: list[str] = []
-    factors: list[str] = []
-    for _, row in frame.iterrows():
-        secid = str(row.get("Код ценной бумаги") or "")
-        score = int(round(safe_float(row.get("Финальный балл"), 0) or 0))
-        admitted = str(row.get("Допущена в портфель") or "").strip().upper() == "ДА"
-        factors.append(_negative_factors(row))
-
-        if secid in selected_ids:
-            reasons.append("Выбран в финальный shortlist")
-            continue
-        if not admitted:
-            blocker = str(row.get("Блокеры") or "").strip()
-            if blocker and blocker != "—":
-                reasons.append("Не допущен: " + blocker)
-            else:
-                reasons.append(f"Не допущен: финальный балл {score} ниже порога покупки 82")
-            continue
-        if score < strong_score:
-            reasons.append(f"Допущен, но балл {score} ниже порога сильного кандидата {strong_score}")
-            continue
-
-        chosen = selected_by_issuer.get(_issuer_key(row))
-        if chosen and chosen != secid:
-            reasons.append(f"Дубликат эмитента: в shortlist выбран выпуск {chosen}")
-        elif len(selected_ids) >= max_size:
-            reasons.append(f"Сильный кандидат, но не вошёл в лимит shortlist {max_size}")
-        else:
-            reasons.append("Сильный кандидат вне shortlist по итоговому ранжированию")
-
-    frame["Почему потерял баллы"] = factors
-    frame["Почему не shortlist"] = reasons
-    frame["В финальном shortlist"] = frame["Код ценной бумаги"].astype(str).isin(selected_ids).map({True: "ДА", False: "НЕТ"})
-    return frame
-
+from decision_engine import annotate_shortlist_reasons as _annotate_shortlist_reasons, decide
 
 def load_optional(root: Path, pattern: str, sheet: str | int = 0) -> pd.DataFrame:
     path = latest(root, pattern, required=False)
