@@ -4,7 +4,7 @@ import sys
 from collections.abc import Callable
 
 
-USAGE = """MOEX Bond Lab
+USAGE = r"""MOEX Bond Lab
 
 Usage:
   python bondlab.py gui
