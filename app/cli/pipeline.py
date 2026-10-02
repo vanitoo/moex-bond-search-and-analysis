@@ -17,6 +17,11 @@ for _path in (str(APP_CORE), str(APP_PORTFOLIO), str(APP_ROOT), str(SRC_ROOT), s
         sys.path.insert(0, _path)
 
 from master_dataset import build_master_dataset
+from stage_registry import (
+    MODULE_DESCRIPTIONS,
+    PIPELINE_STAGE_SCRIPTS,
+    resolve_market_script,
+)
 from pipeline_architecture import (
     BY_SCRIPT,
     append_event,
@@ -28,43 +33,18 @@ from pipeline_architecture import (
     write_summaries,
 )
 
-STAGES = [
-    "1_bonds_search_by_criteria.py",
-    "2_bonds_cashflow.py",
-    "3a_bonds_news_search.py",
-    "3b_bonds_news.py",
-    "4b_bonds_purchase_volume.py",
-    "4c_bonds_ofz_spread.py",
-    "5_bonds_analysis.py",
-    "6_bonds_deep_analysis.py",
-    "7_bonds_credit_analysis.py",
-    "8_bonds_decision.py",
-]
-
-MODULE_DESCRIPTIONS = {
-    "1_bonds_search_by_criteria.py": "V1: старый последовательный сканер рынка MOEX. Оставлен как контрольный и резервный вариант.",
-    "1_bonds_market_scanner_v2.py": "V2: пакетная загрузка рынка, локальная фильтрация, дисковый кэш и ограниченный параллелизм.",
-    "2_bonds_cashflow.py": "Получает и анализирует будущие купоны, амортизации, оферты и полноту денежных потоков.",
-    "3a_bonds_news_search.py": "Определяет эмитентов найденных выпусков и скачивает свежие новости в локальную папку.",
-    "3b_bonds_news.py": "Анализирует новости, выявляет негативные и позитивные события и формирует новостные стоп-факторы.",
-    "4b_bonds_purchase_volume.py": "Проверяет цену, стакан, оборот и ликвидность, затем рассчитывает допустимый объём покупки.",
-    "4c_bonds_ofz_spread.py": "Сравнивает доходность облигации с сопоставимой ОФЗ и рассчитывает премию за риск.",
-    "5_bonds_analysis.py": "Объединяет результаты доступных модулей и выполняет первичную рыночную оценку облигаций.",
-    "6_bonds_deep_analysis.py": "Выполняет углублённый скоринг с учётом структуры выпуска, новостей, ликвидности и полноты данных.",
-    "7_bonds_credit_analysis.py": "Проверяет рейтинги и финансовые показатели эмитента и оценивает кредитный риск.",
-    "8_bonds_decision.py": "Формирует итоговое решение по каждой облигации на основании включённых модулей и доступных данных.",
-}
-
+STAGES = list(PIPELINE_STAGE_SCRIPTS)
 FIRST_STAGE = 1
 LAST_STAGE = len(STAGES)
 DEFAULT_RATINGS_CACHE_HOURS = 24
 
 
 def selected_market_script(config: dict) -> str:
-    version = str(module_config(config, "market_search").get("version", "v1")).strip().lower()
-    if version not in {"v1", "v2"}:
-        raise SystemExit("market_search.version должен быть v1 или v2")
-    return "1_bonds_market_scanner_v2.py" if version == "v2" else "1_bonds_search_by_criteria.py"
+    version = module_config(config, "market_search").get("version", "v1")
+    try:
+        return resolve_market_script(str(version))
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
 
 def actual_script(script_name: str, config: dict) -> str:
