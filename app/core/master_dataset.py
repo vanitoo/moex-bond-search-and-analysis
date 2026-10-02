@@ -8,17 +8,19 @@ from typing import Any
 
 import pandas as pd
 
+from stage_registry import RESULT_FILES
+
 
 MODULE_SOURCES: dict[str, tuple[str, list[str]]] = {
-    "market_search": ("bond_search_*.xlsx", ["Результаты поиска"]),
-    "cashflow": ("bond_cashflow_*.xlsx", ["Cashflow", "Денежные потоки", "Исходные данные"]),
-    "news": ("bond_news_*.xlsx", ["Новости"]),
-    "liquidity": ("bond_purchase_volume_*.xlsx", ["Объем покупки", "Объём покупки"]),
-    "ofz_spread": ("bond_ofz_spread_*.xlsx", ["Спред к ОФЗ", "Результаты"]),
-    "analysis": ("bond_analysis_*.xlsx", ["Анализ", "Результаты"]),
-    "deep_analysis": ("bond_deep_analysis_*.xlsx", ["Глубокий анализ", "Результаты"]),
-    "credit": ("bond_credit_analysis_*.xlsx", ["Кредитный анализ"]),
-    "decision": ("bond_decisions_*.xlsx", ["Решения"]),
+    "market_search": (str(RESULT_FILES["market_search"]), ["Результаты поиска"]),
+    "cashflow": (str(RESULT_FILES["cashflow"]), ["Cashflow", "Денежные потоки", "Исходные данные"]),
+    "news": (str(RESULT_FILES["news"]), ["Новости"]),
+    "liquidity": (str(RESULT_FILES["liquidity"]), ["Объем покупки", "Объём покупки"]),
+    "ofz_spread": (str(RESULT_FILES["ofz_spread"]), ["Спред к ОФЗ", "Результаты"]),
+    "analysis": (str(RESULT_FILES["analysis"]), ["Анализ", "Результаты"]),
+    "deep_analysis": (str(RESULT_FILES["deep_analysis"]), ["Глубокий анализ", "Результаты"]),
+    "credit": (str(RESULT_FILES["credit"]), ["Кредитный анализ"]),
+    "decision": (str(RESULT_FILES["decision"]), ["Решения"]),
 }
 
 SECID_ALIASES = ("Код ценной бумаги", "SECID", "secid")
