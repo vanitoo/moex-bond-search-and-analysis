@@ -20,7 +20,17 @@ from pipeline_architecture import is_enabled, load_config
 from pipeline_common import clean_secid_rows, latest, merge_by_secid
 from moex_bond_search_and_analysis.rating_signal import load_rating_events
 from portfolio_shortlist import annotate_decisions, write_shortlist
-from decision_engine import annotate_shortlist_reasons as _annotate_shortlist_reasons, decide
+from decision_engine import (
+    CRITICAL,
+    RATING_ORDER,
+    annotate_shortlist_reasons as _annotate_shortlist_reasons,
+    decide,
+    issuer_key as _issuer_key,
+    negative_factors as _negative_factors,
+    normalize,
+    rating,
+    yes,
+)
 
 def load_optional(root: Path, pattern: str, sheet: str | int = 0) -> pd.DataFrame:
     path = latest(root, pattern, required=False)
