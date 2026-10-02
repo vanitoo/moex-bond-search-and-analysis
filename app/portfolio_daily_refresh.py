@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime
@@ -20,7 +21,13 @@ MOEX = "https://iss.moex.com/iss"
 
 def _run(command: list[str], cwd: Path) -> None:
     print("\n> " + " ".join(command))
-    subprocess.run(command, cwd=cwd, check=True)
+    project_root = Path(__file__).resolve().parent.parent
+    env = os.environ.copy()
+    pythonpath = [str(project_root / "app"), str(project_root / "src"), str(project_root)]
+    if env.get("PYTHONPATH"):
+        pythonpath.append(env["PYTHONPATH"])
+    env["PYTHONPATH"] = os.pathsep.join(pythonpath)
+    subprocess.run(command, cwd=cwd, check=True, env=env)
 
 
 def _rows(payload: dict[str, Any], block: str) -> list[dict[str, Any]]:
@@ -238,7 +245,7 @@ def main() -> None:
             pass
 
     news_search_cmd = [
-        sys.executable, str(root / "3a_bonds_news_search.py"),
+        sys.executable, str(root / "app" / "stages" / "3a_bonds_news_search.py"),
         "--input", str(portfolio_input),
         "--providers", providers,
         "--proxy-env", proxy_env,
@@ -250,7 +257,7 @@ def main() -> None:
 
     news_output = run_dir / f"bond_news_daily_{stamp}.xlsx"
     _run([
-        sys.executable, str(root / "3b_bonds_news.py"),
+        sys.executable, str(root / "app" / "stages" / "3b_bonds_news.py"),
         "--input", str(portfolio_input),
         "--news-dir", str(run_dir),
         "--output", str(news_output),
@@ -259,7 +266,7 @@ def main() -> None:
     spread_output = run_dir / f"bond_ofz_spread_daily_{stamp}.xlsx"
     try:
         _run([
-            sys.executable, str(root / "4c_bonds_ofz_spread.py"),
+            sys.executable, str(root / "app" / "stages" / "4c_bonds_ofz_spread.py"),
             "--input", str(portfolio_input),
             "--output", str(spread_output),
         ], run_dir)
