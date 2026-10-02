@@ -16,11 +16,11 @@ for _path in (str(CORE), str(PORTFOLIO), str(SRC), str(ROOT)):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-from pipeline_architecture import is_enabled, load_config
-from pipeline_common import clean_secid_rows, latest, merge_by_secid
+from app.core.pipeline_architecture import is_enabled, load_config
+from app.core.pipeline_common import clean_secid_rows, latest, merge_by_secid
 from moex_bond_search_and_analysis.rating_signal import load_rating_events
-from portfolio_shortlist import annotate_decisions, write_shortlist
-from decision_engine import (
+from app.portfolio.portfolio_shortlist import annotate_decisions, write_shortlist
+from app.core.decision_engine import (
     CRITICAL,
     RATING_ORDER,
     annotate_shortlist_reasons as _annotate_shortlist_reasons,
