@@ -5,8 +5,8 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-import base
-from bond_journey import journey_rows, route_text
+from app.gui.features import base
+from app.core.bond_journey import journey_rows, route_text
 
 
 def render_bond_journey(run_dir: Path) -> None:
