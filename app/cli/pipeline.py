@@ -22,9 +22,6 @@ from run_paths import latest_pipeline_run, new_run_dir
 from stage_arguments import (
     DEFAULT_RATINGS_CACHE_HOURS,
     actual_script,
-    market_search_arguments,
-    ratings_cache_is_fresh,
-    selected_market_script,
     stage_arguments,
 )
 from stage_registry import MODULE_DESCRIPTIONS, PIPELINE_STAGE_SCRIPTS
@@ -64,7 +61,12 @@ def run_portfolio_monitor(project_root: Path, run_dir: Path, portfolio_name: str
                "--run-dir", str(run_dir), "--portfolio-dir", str(project_root / "data" / "virtual_portfolios"),
                "--history-dir", str(project_root / "data" / "portfolio_monitor_history"),
                "--report-dir", str(project_root / "reports")]
-    subprocess.run(command, check=True, cwd=project_root)
+    subprocess.run(
+        command,
+        check=True,
+        cwd=project_root,
+        env=build_subprocess_env(project_root),
+    )
 
 
 def selected_stage_numbers(args: argparse.Namespace) -> list[int]:
