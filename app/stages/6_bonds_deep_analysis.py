@@ -14,7 +14,7 @@ for _path in (str(CORE_ROOT), str(SRC_ROOT), str(PROJECT_ROOT)):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-from pipeline_common import latest, safe_float
+from app.core.pipeline_common import latest, safe_float
 
 REQUIRED = {
     "Полное наименование", "Код ценной бумаги", "Доходность",
