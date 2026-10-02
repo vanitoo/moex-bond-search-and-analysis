@@ -253,7 +253,7 @@ def render_candidates(
             if any(base.deep_get(bond, path) is not None for bond in chosen)
         ]
         default_metrics = [name for name in base.DEFAULT_COMPARE_METRICS if name in available_metrics]
-        metrics = st.multiselect("Параметры сравнения", available_metrics, default=default_metrics or available_metrics[:5], key="candidate_metrics_v4")
+        metrics = st.multiselect("Параметры сравнения", available_metrics, default=default_metrics or available_metrics[:5], key="candidate_metrics")
 
         labels = {bond["secid"]: (bond.get("name") or bond["secid"]) for bond in chosen}
         compare_rows = []
@@ -270,7 +270,7 @@ def render_candidates(
             leader, leader_score = max(scored, key=lambda pair: pair[1])
             st.info(f"По текущему скорингу лидирует **{base.bond_label(leader)}** — {leader_score:.0f} баллов.")
 
-        chart_metrics = st.multiselect("Графики", metrics, default=metrics[: min(3, len(metrics))], key="candidate_charts_v4")
+        chart_metrics = st.multiselect("Графики", metrics, default=metrics[: min(3, len(metrics))], key="candidate_charts")
         for metric in chart_metrics:
             values = []
             for bond in chosen:
