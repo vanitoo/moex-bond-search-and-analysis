@@ -11,8 +11,12 @@ from typing import Any
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[2]
+CORE = ROOT / "app" / "core"
+PORTFOLIO = ROOT / "app" / "portfolio"
 SRC = ROOT / "src"
-sys.path.insert(0, str(SRC))
+for _path in (str(CORE), str(PORTFOLIO), str(SRC), str(ROOT)):
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
 
 from pipeline_architecture import is_enabled, load_config
 from pipeline_common import clean_secid_rows, latest, merge_by_secid, safe_float
