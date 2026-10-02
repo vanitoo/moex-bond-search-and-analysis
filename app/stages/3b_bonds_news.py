@@ -17,7 +17,7 @@ for _path in (str(CORE_ROOT), str(PORTFOLIO_ROOT), str(APP_ROOT), str(SRC_ROOT),
 
 import pandas as pd
 
-from pipeline_common import clean_secid_rows, dated_name, latest, normalize
+from app.core.pipeline_common import clean_secid_rows, dated_name, latest, normalize
 
 DANGER = {
     "Дефолт/просрочка": ("дефолт", "просроч", "не выплат", "невыплат", "технический дефолт"),
