@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -11,29 +10,8 @@ import pandas as pd
 from pipeline_common import clean_secid_rows, latest, normalize, safe_float
 
 
-@dataclass(frozen=True)
-class ModuleSpec:
-    key: str
-    script: str
-    output_pattern: str | None
-    sheet: str | int = 0
+from stage_registry import BY_SCRIPT, MODULES, ModuleSpec
 
-
-MODULES = [
-    ModuleSpec("market_search", "1_bonds_search_by_criteria.py", "bond_search_*.xlsx", "Результаты поиска"),
-    ModuleSpec("market_search", "1_bonds_market_scanner_v2.py", "bond_search_*.xlsx", "Результаты поиска"),
-    ModuleSpec("cashflow", "2_bonds_cashflow.py", "bond_cashflow_*.xlsx", 0),
-    ModuleSpec("news_search", "3a_bonds_news_search.py", None),
-    ModuleSpec("news", "3b_bonds_news.py", "bond_news_*.xlsx", "Новости"),
-    ModuleSpec("liquidity", "4b_bonds_purchase_volume.py", "bond_purchase_volume_*.xlsx", "Объем покупки"),
-    ModuleSpec("ofz_spread", "4c_bonds_ofz_spread.py", "bond_ofz_spread_*.xlsx", 0),
-    ModuleSpec("analysis", "5_bonds_analysis.py", "bond_analysis_*.xlsx", 0),
-    ModuleSpec("deep_analysis", "6_bonds_deep_analysis.py", "bond_deep_analysis_*.xlsx", 0),
-    ModuleSpec("credit", "7_bonds_credit_analysis.py", "bond_credit_analysis_*.xlsx", "Кредитный анализ"),
-    ModuleSpec("decision", "8_bonds_decision.py", "bond_decisions_*.xlsx", "Решения"),
-]
-
-BY_SCRIPT = {item.script: item for item in MODULES}
 
 
 def load_config(path: Path | None) -> dict[str, Any]:
