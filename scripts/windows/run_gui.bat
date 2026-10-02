@@ -1,7 +1,7 @@
 @echo off
 setlocal
 cd /d "%~dp0\..\.."
-python run_gui.py
+python bondlab.py gui
 if errorlevel 1 (
   echo.
   echo GUI не запустился. Установите зависимости:
