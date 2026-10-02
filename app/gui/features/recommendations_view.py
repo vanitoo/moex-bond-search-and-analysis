@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 import base
-import portfolio_view as v4
+import portfolio_view
 from portfolio_recommendation import recommend_candidate
 from portfolio_store import list_portfolios, load_portfolio
 
@@ -79,12 +79,10 @@ def render_bond_explanation(bond: dict[str, Any], run_dir) -> None:
 
 
 def render_candidates(run_dir) -> None:
-    original = base.render_bond_explanation
-    try:
-        base.render_bond_explanation = lambda bond: render_bond_explanation(bond, run_dir)
-        v4.render_candidates(run_dir)
-    finally:
-        base.render_bond_explanation = original
+    portfolio_view.render_candidates(
+        run_dir,
+        explanation_renderer=lambda bond: render_bond_explanation(bond, run_dir),
+    )
 
 
 def render_recommendations(run_dir) -> None:
@@ -205,41 +203,3 @@ def render_run_update(run_dir, config: dict[str, Any]) -> None:
 
     st.markdown("### Точечный перезапуск")
     base.render_rerun(run_dir, config)
-
-
-def main() -> None:
-    st.set_page_config(page_title="MOEX Bond Lab", page_icon="📊", layout="wide")
-    st.title("📊 MOEX Bond Lab")
-    st.caption("Сканер → анализ → кандидаты → портфель → рекомендации → мониторинг.")
-    config = base.config_editor()
-    dirs = base.run_dirs()
-    choices = ["➕ Новый анализ на сегодня"] + [path.name for path in dirs]
-    default = choices.index(base.TODAY_RUN.name) if base.TODAY_RUN.name in choices else 0
-    selected = st.sidebar.selectbox("Анализ", choices, index=default)
-    if selected == "➕ Новый анализ на сегодня":
-        base.render_start_today(config)
-        return
-
-    run_dir = base.PROJECT_ROOT / selected
-    is_today = run_dir.name == base.TODAY_RUN.name
-    st.sidebar.success("Текущий день: модули можно обновлять") if is_today else st.sidebar.info("Архив: только просмотр")
-    tabs = st.tabs(["Обзор", "Облигации", "Кандидаты", "Портфель", "Рекомендации", "Модули и причины", "Запуск / обновление"])
-    with tabs[0]:
-        base.render_overview(run_dir)
-    with tabs[1]:
-        base.render_bonds(run_dir)
-    with tabs[2]:
-        render_candidates(run_dir)
-    with tabs[3]:
-        v4.render_portfolio(run_dir)
-    with tabs[4]:
-        render_recommendations(run_dir)
-    with tabs[5]:
-        trace = base.trace_table(run_dir)
-        st.dataframe(trace, width="stretch", hide_index=True) if not trace.empty else st.info("Журнал пока отсутствует")
-    with tabs[6]:
-        render_run_update(run_dir, config) if is_today else st.info("Архив доступен только для просмотра")
-
-
-if __name__ == "__main__":
-    main()
