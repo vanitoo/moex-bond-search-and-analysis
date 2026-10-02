@@ -38,7 +38,7 @@ from moex_bond_search_and_analysis.cbr_banks import (
     DEFAULT_BANK_CACHE_DAYS,
     DEFAULT_BANK_DELAY_SECONDS,
 )
-from credit_engine import (
+from app.core.credit_engine import (
     CreditResult,
     RATING_ORDER,
     RATING_POINTS,
@@ -55,8 +55,8 @@ from credit_engine import (
     row_match_score,
     safe_float,
 )
-from credit_report import list_html, write_excel, write_html
-from credit_sources import (
+from app.core.credit_report import list_html, write_excel, write_html
+from app.core.credit_sources import (
     BankRefreshOptions,
     FinancialRefreshOptions,
     classify_population,
