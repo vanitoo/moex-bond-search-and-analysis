@@ -17,6 +17,7 @@ for _path in (str(APP_CORE), str(APP_PORTFOLIO), str(APP_ROOT), str(SRC_ROOT), s
         sys.path.insert(0, _path)
 
 from master_dataset import build_master_dataset
+from runtime_env import build_subprocess_env
 from stage_registry import (
     MODULE_DESCRIPTIONS,
     PIPELINE_STAGE_SCRIPTS,
@@ -256,18 +257,7 @@ def main() -> None:
         print(f"Рабочая папка: {run_dir}")
         print("=" * 72)
         try:
-            child_env = dict(**__import__("os").environ)
-            pythonpath = [
-                str(project_root / "app" / "core"),
-                str(project_root / "app" / "portfolio"),
-                str(project_root / "app"),
-                str(project_root / "src"),
-                str(project_root),
-            ]
-            existing = child_env.get("PYTHONPATH")
-            if existing:
-                pythonpath.append(existing)
-            child_env["PYTHONPATH"] = __import__("os").pathsep.join(pythonpath)
+            child_env = build_subprocess_env(project_root)
             subprocess.run(command, check=True, cwd=run_dir, env=child_env)
         except subprocess.CalledProcessError as exc:
             record_stage_error(run_dir, spec, config, exc)
