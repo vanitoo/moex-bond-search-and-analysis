@@ -1,20 +1,26 @@
 # GUI features
 
-Текущий GUI собран из смысловых модулей, а не из версий `gui_app_vN.py`.
+Текущий GUI собран из смысловых render-модулей. Исторической цепочки `gui_app_vN.py` в runtime больше нет.
 
-- `base.py` — общая Streamlit-логика, конфигурация, чтение результатов;
-- `portfolio_impact_view.py` — сценарий влияния покупки;
-- `portfolio_view.py` — управление виртуальным портфелем;
-- `recommendations_view.py` — рекомендации и сравнение кандидатов;
-- `module_state.py` — состояние и ошибки модулей;
-- `runner_view.py` — запуск/лог pipeline;
+- `current.py` — единственная композиция текущего GUI: layout, вкладки и выбор анализа;
+- `base.py` — общие GUI-утилиты, конфигурация, состояние модулей, запуск pipeline и чтение master;
 - `today_view.py` — экран «Сегодня»;
-- `tabs.py` — структура вкладок;
-- `allocation_view.py` — распределение новых денег;
+- `portfolio_view.py` — управление виртуальным портфелем и ручной shortlist;
+- `recommendations_view.py` — рекомендации и объяснения;
+- `portfolio_impact_view.py` — сценарий влияния покупки;
+- `allocation_view.py` — расчёт распределения новых денег;
 - `bond_journey_view.py` — маршрут бумаги по этапам анализа;
-- `portfolio_charts_view.py` — графики портфеля;
-- `buy_plan_view.py` — план покупки и добавление в виртуальный портфель;
-- `portfolio_workspace.py` — portfolio-first, ручные позиции, доходы;
-- `current.py` — сборка текущего GUI.
+- `portfolio_charts_view.py` — структура и графики портфеля;
+- `buy_plan_view.py` — авто/ручной план покупки;
+- `portfolio_workspace.py` — portfolio-first, ручные позиции, доходы и модельный shortlist;
+- `tabs.py` — только метаданные вкладок.
 
-Напрямую эти файлы запускать не нужно. Пользовательский запуск: `python bondlab.py gui`.
+Правила слоя GUI:
+
+1. Только `current.py` содержит `main()` и собирает приложение.
+2. Остальные feature-файлы экспортируют render-функции и не запускают другие feature-модули.
+3. Нельзя возвращать alias-цепочки `v4`, `v10`, `_v14` и подобные следы исторических версий.
+4. Нельзя monkeypatch-ить функции соседних модулей для сборки текущего интерфейса.
+5. Пользовательский запуск остаётся один: `python bondlab.py gui`.
+
+Напрямую файлы из `app/gui/features/` запускать не нужно.
