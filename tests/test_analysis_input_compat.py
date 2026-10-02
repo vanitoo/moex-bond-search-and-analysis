@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 
 
-MODULE_PATH = Path(__file__).resolve().parents[1] / "5_bonds_analysis.py"
+MODULE_PATH = Path(__file__).resolve().parents[1] / "app" / "stages" / "5_bonds_analysis.py"
 spec = importlib.util.spec_from_file_location("bonds_analysis", MODULE_PATH)
 analysis = importlib.util.module_from_spec(spec)
 assert spec.loader is not None
