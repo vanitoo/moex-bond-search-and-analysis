@@ -1,27 +1,22 @@
 from __future__ import annotations
 
 import argparse
-import os
 import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
 
+from app.core.runtime_env import build_subprocess_env
+
 
 def _run(command: list[str], cwd: Path) -> None:
     print("\n> " + " ".join(command))
-    env = os.environ.copy()
-    pythonpath = [
-        str(cwd / "app" / "core"),
-        str(cwd / "app" / "portfolio"),
-        str(cwd / "app"),
-        str(cwd / "src"),
-        str(cwd),
-    ]
-    if env.get("PYTHONPATH"):
-        pythonpath.append(env["PYTHONPATH"])
-    env["PYTHONPATH"] = os.pathsep.join(pythonpath)
-    subprocess.run(command, cwd=cwd, check=True, env=env)
+    subprocess.run(
+        command,
+        cwd=cwd,
+        check=True,
+        env=build_subprocess_env(cwd),
+    )
 
 
 def latest_analysis_dir(root: Path) -> Path | None:
