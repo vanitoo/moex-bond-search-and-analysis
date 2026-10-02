@@ -19,7 +19,7 @@ from urllib.parse import quote
 import pandas as pd
 import requests
 
-from pipeline_common import dated_name, latest, safe_float
+from app.core.pipeline_common import dated_name, latest, safe_float
 
 MOEX = "https://iss.moex.com/iss"
 
