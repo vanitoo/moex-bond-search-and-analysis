@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from datetime import datetime
@@ -9,7 +10,12 @@ from pathlib import Path
 
 def _run(command: list[str], cwd: Path) -> None:
     print("\n> " + " ".join(command))
-    subprocess.run(command, cwd=cwd, check=True)
+    env = os.environ.copy()
+    pythonpath = [str(cwd / "app"), str(cwd / "src"), str(cwd)]
+    if env.get("PYTHONPATH"):
+        pythonpath.append(env["PYTHONPATH"])
+    env["PYTHONPATH"] = os.pathsep.join(pythonpath)
+    subprocess.run(command, cwd=cwd, check=True, env=env)
 
 
 def latest_analysis_dir(root: Path) -> Path | None:
