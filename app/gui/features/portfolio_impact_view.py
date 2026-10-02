@@ -5,8 +5,8 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-import base
-from portfolio_impact import load_portfolios, simulate_purchase
+from app.gui.features import base
+from app.portfolio.portfolio_impact import load_portfolios, simulate_purchase
 
 
 
