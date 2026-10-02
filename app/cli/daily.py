@@ -25,12 +25,19 @@ def _run(command: list[str], cwd: Path) -> None:
 
 
 def latest_analysis_dir(root: Path) -> Path | None:
-    candidates = [
-        path for path in root.glob("bond_????_??_??")
-        if path.is_dir() and (path / "decisions").exists()
-    ]
+    roots = [root / "runs", root]
+    candidates: list[Path] = []
+    for base in roots:
+        if not base.exists():
+            continue
+        candidates.extend([
+            path for path in base.glob("bond_????_??_??")
+            if path.is_dir() and (path / "decisions").exists()
+        ])
     if not candidates:
-        candidates = [path for path in root.glob("bond_????_??_??") if path.is_dir()]
+        for base in roots:
+            if base.exists():
+                candidates.extend([path for path in base.glob("bond_????_??_??") if path.is_dir()])
     return max(candidates, key=lambda path: path.name) if candidates else None
 
 
@@ -68,7 +75,7 @@ def main() -> None:
         run_dir = Path(args.run_dir).expanduser().resolve()
         baseline_kind = "указанная папка"
     elif args.mode == "full":
-        run_dir = root / f"bond_{datetime.now():%Y_%m_%d}"
+        run_dir = root / "runs" / f"bond_{datetime.now():%Y_%m_%d}"
     else:
         run_dir = latest_analysis_dir(root)
         if run_dir is None:
