@@ -6,8 +6,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from portfolio_recommendation import recommend_candidate
-from portfolio_store import load_portfolio
+from app.portfolio.portfolio_recommendation import recommend_candidate
+from app.portfolio.portfolio_store import load_portfolio
 
 
 ACTION_ORDER = {
