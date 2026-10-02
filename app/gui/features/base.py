@@ -14,6 +14,7 @@ import streamlit.components.v1 as components
 from app.gui.selection_profiles_ui import search_criteria_editor as render_search_criteria_editor
 
 from app.core.master_dataset import build_master_dataset
+from app.core.value_utils import deep_get
 from app.core.runtime_env import build_subprocess_env
 from app.core.stage_registry import GUI_MODULES, MODULE_DEPENDENCIES, RESULT_FILES as STAGE_RESULT_FILES
 
@@ -409,15 +410,6 @@ def render_bonds(run_dir: Path) -> None:
     if query:
         data = data[data["SECID"].astype(str).str.contains(query, case=False, na=False) | data["Название"].astype(str).str.contains(query, case=False, na=False)]
     st.dataframe(data, use_container_width=True, hide_index=True)
-
-
-def deep_get(item: dict[str, Any], dotted_path: str) -> Any:
-    value: Any = item
-    for part in dotted_path.split("."):
-        if not isinstance(value, dict):
-            return None
-        value = value.get(part)
-    return value
 
 
 def candidate_file(run_dir: Path) -> Path:
