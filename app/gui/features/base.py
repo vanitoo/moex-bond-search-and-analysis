@@ -335,18 +335,6 @@ def render_start_today(config: dict[str, Any]) -> None:
         run_with_ui(TODAY_RUN, enabled, config, refresh)
 
 
-def read_excel_safely(path: Path | None, preferred: list[str] | None = None) -> pd.DataFrame:
-    if path is None:
-        return pd.DataFrame()
-    try:
-        book = pd.ExcelFile(path)
-        sheet = next((x for x in (preferred or []) if x in book.sheet_names), book.sheet_names[0])
-        return pd.read_excel(path, sheet_name=sheet)
-    except Exception as exc:
-        st.warning(f"Не удалось прочитать {path.name}: {exc}")
-        return pd.DataFrame()
-
-
 def trace_table(run_dir: Path) -> pd.DataFrame:
     path = run_dir / "decisions" / "module_results.jsonl"
     if not path.exists():
@@ -501,78 +489,6 @@ def render_bond_explanation(bond: dict[str, Any]) -> None:
         st.caption("Факторы снижения: " + str(negative))
     if shortlist_reason:
         st.caption("Shortlist: " + str(shortlist_reason))
-
-
-def render_candidates(run_dir: Path) -> None:
-    st.subheader("Кандидаты к покупке")
-    st.caption("Соберите собственный короткий список и сравнивайте бумаги на одном экране. Данные берутся из bonds_master.json, а не напрямую из Excel.")
-    master = load_master(run_dir)
-    bonds = master.get("bonds", [])
-    if not bonds:
-        st.info("Нет данных для сравнения. Сначала выполните хотя бы поиск облигаций.")
-        return
-
-    by_secid = {str(bond.get("secid")): bond for bond in bonds}
-    options = list(by_secid)
-    defaults = [secid for secid in saved_candidates(run_dir) if secid in by_secid]
-    selected = st.multiselect(
-        "Выберите 2–10 облигаций",
-        options,
-        default=defaults,
-        max_selections=10,
-        format_func=lambda secid: bond_label(by_secid[secid]),
-    )
-    if st.button("Сохранить список кандидатов"):
-        save_candidates(run_dir, selected)
-        st.success("Список сохранён для этого дня анализа.")
-
-    if len(selected) < 2:
-        st.info("Выберите минимум две облигации для сравнения.")
-        return
-
-    chosen = [by_secid[secid] for secid in selected]
-    available_metrics = [
-        name for name, path in COMPARE_METRICS.items()
-        if any(deep_get(bond, path) is not None for bond in chosen)
-    ]
-    default_metrics = [name for name in DEFAULT_COMPARE_METRICS if name in available_metrics]
-    metrics = st.multiselect("Параметры сравнения", available_metrics, default=default_metrics or available_metrics[:5])
-
-    compare_rows = []
-    labels = {bond["secid"]: (bond.get("name") or bond["secid"]) for bond in chosen}
-    for metric in metrics:
-        row = {"Параметр": metric}
-        path = COMPARE_METRICS[metric]
-        for bond in chosen:
-            row[labels[bond["secid"]]] = deep_get(bond, path)
-        compare_rows.append(row)
-    st.dataframe(pd.DataFrame(compare_rows), use_container_width=True, hide_index=True)
-
-    scored = [(bond, score_for_leader(bond)) for bond in chosen]
-    scored = [(bond, score) for bond, score in scored if score is not None]
-    if scored:
-        leader, leader_score = max(scored, key=lambda pair: pair[1])
-        st.info(f"По текущему итоговому/глубокому скорингу лидирует **{bond_label(leader)}** — {leader_score:.0f} баллов. Это не отдельная рекомендация: результат зависит от включённых модулей.")
-
-    chart_metrics = st.multiselect("Графики", metrics, default=metrics[: min(3, len(metrics))], key="candidate_charts")
-    for metric in chart_metrics:
-        values = []
-        for bond in chosen:
-            value = deep_get(bond, COMPARE_METRICS[metric])
-            try:
-                numeric = float(value) if value is not None else None
-            except (TypeError, ValueError):
-                numeric = None
-            if numeric is not None:
-                values.append({"Облигация": labels[bond["secid"]], metric: numeric})
-        if values:
-            st.markdown(f"**{metric}**")
-            st.bar_chart(pd.DataFrame(values).set_index("Облигация"))
-
-    st.markdown("### Почему такие оценки")
-    for bond in chosen:
-        with st.container(border=True):
-            render_bond_explanation(bond)
 
 
 def render_rerun(run_dir: Path, config: dict[str, Any]) -> None:
