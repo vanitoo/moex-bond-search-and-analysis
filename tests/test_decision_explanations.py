@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 
-MODULE_PATH = Path(__file__).resolve().parents[1] / "8_bonds_decision.py"
+MODULE_PATH = Path(__file__).resolve().parents[1] / "app" / "stages" / "8_bonds_decision.py"
 spec = importlib.util.spec_from_file_location("decision_module", MODULE_PATH)
 decision = importlib.util.module_from_spec(spec)
 sys.modules[spec.name] = decision
