@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 from datetime import datetime
@@ -12,24 +11,15 @@ import pandas as pd
 import streamlit as st
 
 from master_dataset import build_master_dataset
+from runtime_env import build_subprocess_env
+from stage_registry import GUI_MODULES
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 RUNS_ROOT = PROJECT_ROOT / "runs"
 DEFAULT_CONFIG = PROJECT_ROOT / "configs" / "balanced.json"
 TODAY_RUN = RUNS_ROOT / f"bond_{datetime.now():%Y_%m_%d}"
 
-MODULES = [
-    ("market_search", "1. Поиск облигаций", "Общие критерии для V1 и V2; выбирается только способ сканирования"),
-    ("cashflow", "2. Денежные потоки", "Купоны, оферты и погашения"),
-    ("news_search", "3а. Поиск новостей", "Скачивание и обновление новостей"),
-    ("news", "3б. Анализ новостей", "Риски и стоп-факторы"),
-    ("liquidity", "4б. Ликвидность", "Стакан, оборот и доступный объём"),
-    ("ofz_spread", "4в. Спред к ОФЗ", "Премия к сопоставимой ОФЗ"),
-    ("analysis", "5. Первичный анализ", "Рыночная оценка"),
-    ("deep_analysis", "6. Глубокий анализ", "Второй слой оценки"),
-    ("credit", "7. Кредитный анализ", "Рейтинги и финансовые показатели"),
-    ("decision", "8. Финальное решение", "Работает при любом наборе включённых модулей"),
-]
+MODULES = list(GUI_MODULES)
 MODULE_KEYS = [item[0] for item in MODULES]
 LABELS = {key: title for key, title, _ in MODULES}
 DEPENDENCIES = {
@@ -249,10 +239,7 @@ def execute_modules(run_dir: Path, modules: list[str], config_path: Path, refres
         command += ["--only-module", key]
     if refresh_ratings:
         command.append("--refresh-ratings")
-    child_env = os.environ.copy()
-    child_env["PYTHONUTF8"] = "1"
-    child_env["PYTHONIOENCODING"] = "utf-8"
-    child_env["PYTHONUNBUFFERED"] = "1"
+    child_env = build_subprocess_env(PROJECT_ROOT)
     process = subprocess.Popen(
         command, cwd=PROJECT_ROOT, env=child_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, encoding="utf-8", errors="replace", bufsize=1,
