@@ -50,7 +50,22 @@ from moex_bond_search_and_analysis.cbr_banks import (
     DEFAULT_BANK_DELAY_SECONDS,
     fetch_bank_metrics_for_issuers,
 )
-from credit_engine import best_match, evaluate, fmt, normalize, safe_float
+from credit_engine import (
+    CreditResult,
+    RATING_ORDER,
+    RATING_POINTS,
+    best_match,
+    calculate_metrics,
+    evaluate,
+    fmt,
+    normalize,
+    normalize_rating,
+    parse_date,
+    ratio,
+    rating_direction,
+    row_match_score,
+    safe_float,
+)
 
 
 RATING_TEMPLATE_COLUMNS = [
