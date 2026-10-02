@@ -17,7 +17,7 @@ from typing import Any
 
 import pandas as pd
 
-from pipeline_common import clean_secid_rows, latest, merge_by_secid, safe_float
+from app.core.pipeline_common import clean_secid_rows, latest, merge_by_secid, safe_float
 
 REQUIRED = {"Полное наименование", "Код ценной бумаги", "Нужна квалификация?", "Цена, %", "Объем сделок с 15 дней, шт.", "Доходность", "Дюрация, месяцев"}
 
