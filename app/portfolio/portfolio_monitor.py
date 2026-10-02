@@ -20,7 +20,7 @@ for _path in (str(CORE_ROOT), str(SRC_ROOT), str(PROJECT_ROOT)):
         sys.path.insert(0, _path)
 import requests
 
-from pipeline_common import latest, safe_float
+from app.core.pipeline_common import latest, safe_float
 from moex_bond_search_and_analysis.rating_signal import build_rating_signal, load_rating_events
 
 MOEX = "https://iss.moex.com/iss"
