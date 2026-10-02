@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import json
 import subprocess
-import sys
 from datetime import date
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
+from app.core.runtime_env import build_subprocess_env
 import base
 from portfolio_income import analyze_portfolio_income, write_report
 from portfolio_manual import lookup_bond, make_position
@@ -135,12 +135,22 @@ def render_income_analytics() -> None:
             st.error(str(exc))
 
     if right.button("Обновить риск-мониторинг моих бумаг", key="manual_monitor"):
-        command = [sys.executable, str(base.PROJECT_ROOT / "daily_runner.py"), "monitor", "--portfolio", name]
+        config_path = base.PROJECT_ROOT / "configs" / "gui_active.json"
+        command = [
+            str(base.project_python()),
+            str(base.PROJECT_ROOT / "bondlab.py"),
+            "monitor",
+            "--portfolio",
+            name,
+            "--config",
+            str(config_path),
+        ]
         try:
             with st.spinner("Обновляю MOEX, новости, рейтинги, ОФЗ и действия..."):
                 result = subprocess.run(
                     command,
                     cwd=base.PROJECT_ROOT,
+                    env=build_subprocess_env(base.PROJECT_ROOT),
                     capture_output=True,
                     text=True,
                     encoding="utf-8",
