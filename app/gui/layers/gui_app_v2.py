@@ -14,8 +14,9 @@ import streamlit as st
 from master_dataset import build_master_dataset
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+RUNS_ROOT = PROJECT_ROOT / "runs"
 DEFAULT_CONFIG = PROJECT_ROOT / "configs" / "balanced.json"
-TODAY_RUN = PROJECT_ROOT / f"bond_{datetime.now():%Y_%m_%d}"
+TODAY_RUN = RUNS_ROOT / f"bond_{datetime.now():%Y_%m_%d}"
 
 MODULES = [
     ("market_search", "1. Поиск облигаций", "Общие критерии для V1 и V2; выбирается только способ сканирования"),
@@ -84,7 +85,18 @@ def load_json(path: Path, default: Any) -> Any:
 
 
 def run_dirs() -> list[Path]:
-    return sorted([p for p in PROJECT_ROOT.glob("bond_????_??_??") if p.is_dir()], key=lambda p: p.name, reverse=True)
+    current = [p for p in RUNS_ROOT.glob("bond_????_??_??") if p.is_dir()] if RUNS_ROOT.exists() else []
+    legacy = [p for p in PROJECT_ROOT.glob("bond_????_??_??") if p.is_dir()]
+    by_name = {p.name: p for p in legacy}
+    by_name.update({p.name: p for p in current})  # runs/ имеет приоритет над legacy-корнем
+    return sorted(by_name.values(), key=lambda p: p.name, reverse=True)
+
+
+def resolve_run_dir(name: str) -> Path:
+    current = RUNS_ROOT / name
+    if current.is_dir():
+        return current
+    return PROJECT_ROOT / name
 
 
 def latest_file(run_dir: Path, pattern: str) -> Path | None:
@@ -563,7 +575,7 @@ def main() -> None:
     if selected == "➕ Новый анализ на сегодня":
         render_start_today(config)
         return
-    run_dir = PROJECT_ROOT / selected
+    run_dir = resolve_run_dir(selected)
     is_today = run_dir.name == TODAY_RUN.name
     st.sidebar.success("Текущий день: модули можно обновлять") if is_today else st.sidebar.info("Архив: только просмотр")
     tabs = st.tabs(["Обзор", "Облигации", "Кандидаты", "Модули и причины", "Запуск / обновление"])
