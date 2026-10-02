@@ -8,11 +8,8 @@ from datetime import datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-APP_ROOT = PROJECT_ROOT / "app"
-APP_CORE = APP_ROOT / "core"
-APP_PORTFOLIO = APP_ROOT / "portfolio"
 SRC_ROOT = PROJECT_ROOT / "src"
-for _path in (str(APP_CORE), str(APP_PORTFOLIO), str(APP_ROOT), str(SRC_ROOT), str(PROJECT_ROOT)):
+for _path in (str(PROJECT_ROOT), str(SRC_ROOT)):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
