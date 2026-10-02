@@ -5,11 +5,11 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-import base
-from portfolio_allocator import allocate_budget
-from portfolio_plan import apply_allocation_plan, recalculate_allocation_plan
-from portfolio_shortlist import load_shortlist_secids
-from portfolio_store import list_portfolios, load_portfolio, save_portfolio
+from app.gui.features import base
+from app.portfolio.portfolio_allocator import allocate_budget
+from app.portfolio.portfolio_plan import apply_allocation_plan, recalculate_allocation_plan
+from app.portfolio.portfolio_shortlist import load_shortlist_secids
+from app.portfolio.portfolio_store import list_portfolios, load_portfolio, save_portfolio
 
 
 PORTFOLIO_DIR = base.PROJECT_ROOT / "data" / "virtual_portfolios"
