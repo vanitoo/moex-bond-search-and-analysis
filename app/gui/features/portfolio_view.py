@@ -7,10 +7,10 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-import base
-from portfolio_impact_view import render_portfolio_impact
-from portfolio_impact import infer_issuer, safe_float
-from portfolio_store import (
+from app.gui.features import base
+from app.gui.features.portfolio_impact_view import render_portfolio_impact
+from app.portfolio.portfolio_impact import infer_issuer, safe_float
+from app.portfolio.portfolio_store import (
     create_portfolio,
     delete_portfolio,
     list_portfolios,
