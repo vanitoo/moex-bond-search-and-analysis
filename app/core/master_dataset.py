@@ -8,7 +8,7 @@ from typing import Any
 
 import pandas as pd
 
-from stage_registry import RESULT_FILES
+from app.core.stage_registry import RESULT_FILES
 
 
 MODULE_SOURCES: dict[str, tuple[str, list[str]]] = {
