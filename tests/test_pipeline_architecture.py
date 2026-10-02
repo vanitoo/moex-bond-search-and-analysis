@@ -43,3 +43,9 @@ def test_missing_orderbook_is_warning_not_high_liquidity():
     assert passed is True
     assert score_delta < 0
     assert code == "ORDERBOOK_UNKNOWN"
+
+
+def test_default_config_path_resolves_from_project_root():
+    config = load_config(None)
+    assert config["strategy"] == "balanced"
+    assert "modules" in config
