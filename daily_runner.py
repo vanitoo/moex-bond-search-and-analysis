@@ -97,7 +97,7 @@ def main() -> None:
         run_dir.mkdir(parents=True, exist_ok=True)
         if not args.skip_portfolio_refresh:
             _run([
-                python, str(root / "app" / "portfolio_daily_refresh.py"),
+                python, str(root / "app" / "portfolio" / "portfolio_daily_refresh.py"),
                 "--name", args.portfolio,
                 "--run-dir", str(run_dir),
                 "--portfolio-dir", str(portfolio_dir),
@@ -105,7 +105,7 @@ def main() -> None:
             ], root)
 
         _run([
-            python, str(root / "app" / "portfolio_monitor.py"), "daily",
+            python, str(root / "app" / "portfolio" / "portfolio_monitor.py"), "daily",
             "--name", args.portfolio,
             "--run-dir", str(run_dir),
             "--portfolio-dir", str(portfolio_dir),
@@ -114,7 +114,7 @@ def main() -> None:
         ], root)
 
     _run([
-        python, str(root / "app" / "daily_actions.py"),
+        python, str(root / "app" / "portfolio" / "daily_actions.py"),
         "--name", args.portfolio,
         "--run-dir", str(run_dir),
         "--portfolio-dir", str(portfolio_dir),
