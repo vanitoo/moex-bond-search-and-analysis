@@ -3,12 +3,13 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import date
+from collections.abc import Callable
 from typing import Any
 
 import pandas as pd
 
 from moex_bond_search_and_analysis.cbr_banks import score_bank_metrics
-from moex_bond_search_and_analysis.issuer_credit_model import IssuerCreditModel
+from moex_bond_search_and_analysis.issuer_credit_model import IssuerCreditModel, classify_issuer
 
 
 RATING_POINTS = {
@@ -398,3 +399,99 @@ def evaluate(
         missing,
         metrics,
     )
+
+
+def build_analysis(
+    deep: pd.DataFrame,
+    ratings: pd.DataFrame,
+    financials: pd.DataFrame,
+    bank_metrics_table: pd.DataFrame | None = None,
+    *,
+    progress: Callable[[int, int, str, str], None] | None = None,
+) -> pd.DataFrame:
+    """Evaluate every security using the correct issuer-specific credit model."""
+
+    rows: list[dict[str, Any]] = []
+    total = len(deep)
+    for index, (_, source) in enumerate(deep.iterrows(), start=1):
+        name = str(source.get("Полное наименование") or "")
+        secid = str(source.get("Код ценной бумаги") or "")
+        if progress is not None:
+            progress(index, total, name, secid)
+
+        matched_rating = best_match(source, ratings)
+        fin = best_match(source, financials)
+        model = classify_issuer(
+            name,
+            "" if matched_rating is None else matched_rating.get("Эмитент"),
+            "" if fin is None else fin.get("Эмитент"),
+        )
+        bank_metrics = None
+        if (
+            model.key == "bank"
+            and bank_metrics_table is not None
+            and not bank_metrics_table.empty
+        ):
+            bank_metrics = best_match(source, bank_metrics_table)
+
+        result = evaluate(source, matched_rating, fin, model, bank_metrics)
+        metrics = result.metrics
+        used_fin = fin if model.key == "corporate" else None
+        rows.append({
+            "Полное наименование": name,
+            "Код ценной бумаги": secid,
+            "Эмитент": (
+                "" if matched_rating is None else matched_rating.get("Эмитент")
+            ) or ("" if fin is None else fin.get("Эмитент")) or "",
+            "ИНН": (
+                "" if matched_rating is None else matched_rating.get("ИНН")
+            ) or ("" if fin is None else fin.get("ИНН")) or "",
+            "Доходность": source.get("Доходность"),
+            "Тип эмитента": model.label,
+            "Ключ модели": model.key,
+            "Методика кредитного анализа": model.methodology,
+            "Баллы второго слоя": source.get("Итоговый балл"),
+            "Решение второго слоя": source.get("Решение"),
+            "Рейтинг": "" if matched_rating is None else matched_rating.get("Рейтинг"),
+            "Агентство": "" if matched_rating is None else matched_rating.get("Агентство"),
+            "Прогноз": "" if matched_rating is None else matched_rating.get("Прогноз"),
+            "Дата рейтинга": "" if matched_rating is None else matched_rating.get("Дата рейтинга"),
+            "Баллы рейтинга": result.rating_score,
+            "Период отчётности": "" if used_fin is None else used_fin.get("Период"),
+            "Чистый долг/EBITDA": metrics["Чистый долг/EBITDA"],
+            "Долг/EBITDA": metrics["Долг/EBITDA"],
+            "Покрытие процентов": metrics["Покрытие процентов"],
+            "Текущая ликвидность": metrics["Текущая ликвидность"],
+            "Долг/Капитал": metrics["Долг/Капитал"],
+            "Маржа EBITDA": metrics["Маржа EBITDA"],
+            "Маржа чистой прибыли": metrics["Маржа чистой прибыли"],
+            "OCF/Долг": metrics["OCF/Долг"],
+            "Н1.0": metrics.get("Н1.0"),
+            "Н1.1": metrics.get("Н1.1"),
+            "Н1.2": metrics.get("Н1.2"),
+            "Н2": metrics.get("Н2"),
+            "Н3": metrics.get("Н3"),
+            "Н4": metrics.get("Н4"),
+            "Баллы финансов": result.financial_score,
+            "Полнота данных": result.completeness_score,
+            "Штрафы": result.penalty,
+            "Итоговый кредитный балл": result.final_score,
+            "Финальное решение": result.recommendation,
+            "Уровень риска": result.risk_level,
+            "Максимальная доля": result.max_share,
+            "Уверенность": result.confidence,
+            "Жёсткий стоп": "ДА" if result.hard_stop else "НЕТ",
+            "Положительные факторы": "; ".join(result.positives) or "—",
+            "Риски": "; ".join(result.risks) or "Явные риски не обнаружены",
+            "Недостающие данные": "; ".join(result.missing) or "—",
+            "Источник рейтинга": "" if matched_rating is None else matched_rating.get("Источник"),
+            "Источник финансов": "" if used_fin is None else used_fin.get("Источник"),
+            "Источник банковских данных": "" if bank_metrics is None else bank_metrics.get("Источник"),
+            "Дата банковских данных": "" if bank_metrics is None else bank_metrics.get("Дата отчётности"),
+            "_class": result.recommendation_class,
+        })
+
+    return pd.DataFrame(rows).sort_values(
+        ["Итоговый кредитный балл", "Баллы второго слоя", "Доходность"],
+        ascending=[False, False, False],
+    ).reset_index(drop=True)
