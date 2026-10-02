@@ -24,8 +24,11 @@ import pandas as pd
 import requests
 
 ROOT = Path(__file__).resolve().parents[2]
+CORE = ROOT / "app" / "core"
 SRC = ROOT / "src"
-sys.path.insert(0, str(SRC))
+for _path in (str(CORE), str(SRC), str(ROOT)):
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
 
 from moex_bond_search_and_analysis.ratings import (
     enrich_issuer_identifiers,
@@ -40,10 +43,7 @@ from moex_bond_search_and_analysis.financials import (
     fetch_financials_for_inns,
     merge_financial_rows,
 )
-from moex_bond_search_and_analysis.issuer_credit_model import (
-    IssuerCreditModel,
-    classify_issuer,
-)
+from moex_bond_search_and_analysis.issuer_credit_model import classify_issuer
 from moex_bond_search_and_analysis.cbr_banks import (
     BANK_COLUMNS,
     DEFAULT_BANK_CACHE_DAYS,
