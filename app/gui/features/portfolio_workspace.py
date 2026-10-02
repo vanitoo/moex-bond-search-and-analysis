@@ -9,13 +9,6 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-import buy_plan_view as v14
-import portfolio_view as v4
-import recommendations_view as v6
-import today_view as v9
-import tabs as v10
-import bond_journey_view as v12
-import portfolio_charts_view as v13
 import base
 from portfolio_income import analyze_portfolio_income, write_report
 from portfolio_manual import lookup_bond, make_position
@@ -44,18 +37,18 @@ def render_manual_holding() -> None:
         st.info("Сначала создайте портфель выше.")
         return
 
-    name = st.selectbox("Портфель для ручной позиции", list(portfolios), key="manual_portfolio_v15")
-    secid = st.text_input("SECID", placeholder="RU000A10....", key="manual_secid_v15").strip().upper()
-    if st.button("Проверить SECID на MOEX", disabled=not bool(secid), key="manual_lookup_v15"):
+    name = st.selectbox("Портфель для ручной позиции", list(portfolios), key="manual_portfolio")
+    secid = st.text_input("SECID", placeholder="RU000A10....", key="manual_secid").strip().upper()
+    if st.button("Проверить SECID на MOEX", disabled=not bool(secid), key="manual_lookup"):
         try:
             with st.spinner("Получаю карточку бумаги с MOEX..."):
-                st.session_state["manual_bond_v15"] = lookup_bond(secid)
-            st.session_state["manual_bond_portfolio_v15"] = name
+                st.session_state["manual_bond"] = lookup_bond(secid)
+            st.session_state["manual_bond_portfolio"] = name
         except Exception as exc:
-            st.session_state.pop("manual_bond_v15", None)
+            st.session_state.pop("manual_bond", None)
             st.error(str(exc))
 
-    bond = st.session_state.get("manual_bond_v15")
+    bond = st.session_state.get("manual_bond")
     if not bond:
         return
     if str(bond.get("secid")) != secid and secid:
@@ -72,18 +65,18 @@ def render_manual_holding() -> None:
     existing = next((item for item in portfolio.get("positions", []) if str(item.get("secid")) == str(bond.get("secid"))), {})
     q1, q2, q3 = st.columns(3)
     quantity = q1.number_input(
-        "Количество, шт.", min_value=1, value=max(1, int(existing.get("quantity") or 1)), step=1, key="manual_qty_v15"
+        "Количество, шт.", min_value=1, value=max(1, int(existing.get("quantity") or 1)), step=1, key="manual_qty"
     )
     default_price = float(existing.get("purchase_price_percent") or bond.get("market_price_percent") or 100.0)
     purchase_price = q2.number_input(
-        "Средняя цена покупки, %", min_value=0.01, value=default_price, step=0.01, key="manual_price_v15"
+        "Средняя цена покупки, %", min_value=0.01, value=default_price, step=0.01, key="manual_price"
     )
     existing_date = str(existing.get("purchase_date") or "")[:10]
     try:
         default_date = date.fromisoformat(existing_date) if existing_date else date.today()
     except ValueError:
         default_date = date.today()
-    purchase_date = q3.date_input("Дата / дата последней покупки", value=default_date, key="manual_date_v15")
+    purchase_date = q3.date_input("Дата / дата последней покупки", value=default_date, key="manual_date")
 
     face = float(bond.get("face_value") or 1000.0)
     nkd = float(bond.get("accrued_interest") or 0.0)
@@ -93,14 +86,14 @@ def render_manual_holding() -> None:
         min_value=0.01,
         value=float(existing.get("invested") or calculated),
         step=100.0,
-        key="manual_invested_v15",
+        key="manual_invested",
         help="Для уже существующего портфеля лучше указать фактическую сумму из брокера. НКД в расчётной подсказке учитывается.",
     )
     st.caption(
         f"Номинал {face:,.2f} ₽ · текущий НКД {nkd:,.2f} ₽ · ориентир по введённой цене {_money(calculated)}".replace(",", " ")
     )
 
-    if st.button("Сохранить как мою позицию", type="primary", key="manual_save_v15"):
+    if st.button("Сохранить как мою позицию", type="primary", key="manual_save"):
         try:
             position = make_position(
                 bond,
@@ -127,21 +120,21 @@ def render_income_analytics() -> None:
     portfolios = list_portfolios(PORTFOLIO_DIR)
     if not portfolios:
         return
-    name = st.selectbox("Портфель для доходной аналитики", list(portfolios), key="income_portfolio_v15")
+    name = st.selectbox("Портфель для доходной аналитики", list(portfolios), key="income_portfolio")
 
     left, right = st.columns(2)
-    if left.button("Обновить доходный календарь", type="primary", key="income_refresh_v15"):
+    if left.button("Обновить доходный календарь", type="primary", key="income_refresh"):
         try:
             with st.spinner("Загружаю купоны, амортизации и оферты MOEX..."):
                 portfolio = load_portfolio(PORTFOLIO_DIR, name)
                 payload = analyze_portfolio_income(portfolio)
                 write_report(payload, REPORT_DIR)
-                st.session_state["income_payload_v15"] = payload
-                st.session_state["income_payload_name_v15"] = name
+                st.session_state["income_payload"] = payload
+                st.session_state["income_payload_name"] = name
         except Exception as exc:
             st.error(str(exc))
 
-    if right.button("Обновить риск-мониторинг моих бумаг", key="manual_monitor_v15"):
+    if right.button("Обновить риск-мониторинг моих бумаг", key="manual_monitor"):
         command = [sys.executable, str(base.PROJECT_ROOT / "daily_runner.py"), "monitor", "--portfolio", name]
         try:
             with st.spinner("Обновляю MOEX, новости, рейтинги, ОФЗ и действия..."):
@@ -163,8 +156,8 @@ def render_income_analytics() -> None:
         except Exception as exc:
             st.error(str(exc))
 
-    payload = st.session_state.get("income_payload_v15")
-    if not payload or st.session_state.get("income_payload_name_v15") != name:
+    payload = st.session_state.get("income_payload")
+    if not payload or st.session_state.get("income_payload_name") != name:
         path = REPORT_DIR / f"portfolio_income_{name}_latest.json"
         if path.exists():
             try:
@@ -255,7 +248,7 @@ def render_model_shortlist(run_dir: Path) -> None:
             "Уровень", "Уверенность", "Лимит покупки, ₽",
         ]
         st.dataframe(frame[[col for col in columns if col in frame.columns]], width="stretch", hide_index=True)
-        if st.button("Сохранить shortlist как мой набор кандидатов", key="save_model_shortlist_v15"):
+        if st.button("Сохранить shortlist как мой набор кандидатов", key="save_model_shortlist"):
             base.save_candidates(run_dir, [str(item.get("secid")) for item in rows if item.get("secid")])
             st.success("Shortlist сохранён как ваш набор кандидатов. Его можно менять вручную ниже.")
             st.rerun()
@@ -266,40 +259,3 @@ def render_model_shortlist(run_dir: Path) -> None:
     if strong:
         with st.expander(f"Все сильные кандидаты до удаления дублей эмитентов · {len(strong)}"):
             st.dataframe(pd.DataFrame(strong), width="stretch", hide_index=True)
-
-
-def _render_existing_tabs(run_dir: Path, config: dict, is_today: bool) -> None:
-    tabs = st.tabs(v10.TAB_NAMES)
-    with tabs[0]:
-        v9.render_today(run_dir)
-    with tabs[1]:
-        base.render_overview(run_dir)
-    with tabs[2]:
-        base.render_bonds(run_dir)
-        v12.render_bond_journey(run_dir)
-    with tabs[3]:
-        render_model_shortlist(run_dir)
-        st.markdown("---")
-        v6.render_candidates(run_dir)
-    with tabs[4]:
-        v4.render_portfolio(run_dir)
-        render_manual_holding()
-        render_income_analytics()
-        v13.render_portfolio_charts(run_dir)
-    with tabs[5]:
-        v6.render_recommendations(run_dir)
-        v14.render_buy_plan(run_dir)
-    with tabs[6]:
-        trace = base.trace_table(run_dir)
-        st.dataframe(trace, width="stretch", hide_index=True) if not trace.empty else st.info("Журнал пока отсутствует")
-    with tabs[7]:
-        v6.render_run_update(run_dir, config) if is_today else st.info("Архив доступен только для просмотра")
-
-
-def main() -> None:
-    v14._render_existing_tabs = _render_existing_tabs
-    v14.main()
-
-
-if __name__ == "__main__":
-    main()
