@@ -1,25 +1,16 @@
 from __future__ import annotations
 
 import json
-import math
 import re
 from pathlib import Path
 from typing import Any
+
+from app.core.value_utils import deep_get, safe_float
 
 RATING_ORDER = [
     "D", "C", "CC", "CCC", "B-", "B", "B+", "BB-", "BB", "BB+",
     "BBB-", "BBB", "BBB+", "A-", "A", "A+", "AA-", "AA", "AA+", "AAA",
 ]
-
-
-def safe_float(value: Any) -> float | None:
-    try:
-        if value is None or value == "":
-            return None
-        result = float(str(value).replace(" ", "").replace(",", "."))
-        return result if math.isfinite(result) else None
-    except (TypeError, ValueError):
-        return None
 
 
 def normalize_rating(value: Any) -> str:
@@ -29,15 +20,6 @@ def normalize_rating(value: Any) -> str:
         if item in text:
             return item
     return ""
-
-
-def deep_get(item: dict[str, Any], dotted_path: str) -> Any:
-    value: Any = item
-    for part in dotted_path.split("."):
-        if not isinstance(value, dict):
-            return None
-        value = value.get(part)
-    return value
 
 
 def infer_issuer(bond: dict[str, Any], position: dict[str, Any] | None = None) -> str:
