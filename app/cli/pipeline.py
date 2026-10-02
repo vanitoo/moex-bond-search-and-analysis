@@ -18,6 +18,7 @@ for _path in (str(APP_CORE), str(APP_PORTFOLIO), str(APP_ROOT), str(SRC_ROOT), s
 
 from master_dataset import build_master_dataset
 from runtime_env import build_subprocess_env
+from run_paths import latest_pipeline_run, new_run_dir
 from stage_registry import (
     MODULE_DESCRIPTIONS,
     PIPELINE_STAGE_SCRIPTS,
@@ -131,23 +132,14 @@ def stage_arguments(script_name: str, impact_share: float, project_root: Path, c
 
 
 def find_latest_run_dir(project_root: Path) -> Path | None:
-    roots = [project_root / "runs", project_root]
-    candidates: list[Path] = []
-    for root in roots:
-        if not root.exists():
-            continue
-        candidates.extend([
-            folder for folder in root.glob("bond_????_??_??")
-            if folder.is_dir() and any(folder.glob("bond_search_*.xlsx"))
-        ])
-    return max(candidates, key=lambda folder: folder.stat().st_mtime) if candidates else None
+    return latest_pipeline_run(project_root)
 
 
 def resolve_run_dir(project_root: Path, requested: str | None, from_stage: int) -> Path:
     if requested:
         return Path(requested).expanduser().resolve()
     if from_stage == 1:
-        return project_root / "runs" / f"bond_{datetime.now():%Y_%m_%d}"
+        return new_run_dir(project_root, datetime.now().strftime("%Y_%m_%d"))
     latest_dir = find_latest_run_dir(project_root)
     if latest_dir is None:
         raise SystemExit("Не найдена папка предыдущего запуска с bond_search_*.xlsx. Запустите этап 1 или передайте --run-dir.")
