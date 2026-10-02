@@ -9,8 +9,10 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 APP_ROOT = PROJECT_ROOT / "app"
+APP_CORE = APP_ROOT / "core"
+APP_PORTFOLIO = APP_ROOT / "portfolio"
 SRC_ROOT = PROJECT_ROOT / "src"
-for _path in (str(APP_ROOT), str(SRC_ROOT), str(PROJECT_ROOT)):
+for _path in (str(APP_CORE), str(APP_PORTFOLIO), str(APP_ROOT), str(SRC_ROOT), str(PROJECT_ROOT)):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
@@ -166,7 +168,7 @@ def resolve_run_dir(project_root: Path, requested: str | None, from_stage: int) 
 
 
 def run_portfolio_monitor(project_root: Path, run_dir: Path, portfolio_name: str) -> None:
-    command = [sys.executable, str(project_root / "app" / "portfolio_monitor.py"), "daily", "--name", portfolio_name,
+    command = [sys.executable, str(project_root / "app" / "portfolio" / "portfolio_monitor.py"), "daily", "--name", portfolio_name,
                "--run-dir", str(run_dir), "--portfolio-dir", str(project_root / "data" / "virtual_portfolios"),
                "--history-dir", str(project_root / "data" / "portfolio_monitor_history"),
                "--report-dir", str(project_root / "reports")]
@@ -269,6 +271,8 @@ def main() -> None:
         try:
             child_env = dict(**__import__("os").environ)
             pythonpath = [
+                str(project_root / "app" / "core"),
+                str(project_root / "app" / "portfolio"),
                 str(project_root / "app"),
                 str(project_root / "src"),
                 str(project_root),
