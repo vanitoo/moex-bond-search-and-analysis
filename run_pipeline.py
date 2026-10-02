@@ -7,6 +7,13 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
+PROJECT_ROOT = Path(__file__).resolve().parent
+APP_ROOT = PROJECT_ROOT / "app"
+SRC_ROOT = PROJECT_ROOT / "src"
+for _path in (str(APP_ROOT), str(SRC_ROOT), str(PROJECT_ROOT)):
+    if _path not in sys.path:
+        sys.path.insert(0, _path)
+
 from master_dataset import build_master_dataset
 from pipeline_architecture import (
     BY_SCRIPT,
@@ -159,7 +166,7 @@ def resolve_run_dir(project_root: Path, requested: str | None, from_stage: int) 
 
 
 def run_portfolio_monitor(project_root: Path, run_dir: Path, portfolio_name: str) -> None:
-    command = [sys.executable, str(project_root / "10_portfolio_monitor.py"), "daily", "--name", portfolio_name,
+    command = [sys.executable, str(project_root / "app" / "portfolio_monitor.py"), "daily", "--name", portfolio_name,
                "--run-dir", str(run_dir), "--portfolio-dir", str(project_root / "data" / "virtual_portfolios"),
                "--history-dir", str(project_root / "data" / "portfolio_monitor_history"),
                "--report-dir", str(project_root / "reports")]
@@ -240,7 +247,7 @@ def main() -> None:
             print(f"\nЭтап {number}: {script_name} — ОТКЛЮЧЁН конфигурацией")
             record_disabled(run_dir, spec, config)
             continue
-        command = [sys.executable, str(project_root / script_name)]
+        command = [sys.executable, str(project_root / "app" / "stages" / script_name)]
         command += stage_arguments(script_name, args.impact_share, project_root, config, config_path,
                                    refresh_ratings=args.refresh_ratings,
                                    ratings_cache_hours=args.ratings_cache_hours)
@@ -260,7 +267,17 @@ def main() -> None:
         print(f"Рабочая папка: {run_dir}")
         print("=" * 72)
         try:
-            subprocess.run(command, check=True, cwd=run_dir)
+            child_env = dict(**__import__("os").environ)
+            pythonpath = [
+                str(project_root / "app"),
+                str(project_root / "src"),
+                str(project_root),
+            ]
+            existing = child_env.get("PYTHONPATH")
+            if existing:
+                pythonpath.append(existing)
+            child_env["PYTHONPATH"] = __import__("os").pathsep.join(pythonpath)
+            subprocess.run(command, check=True, cwd=run_dir, env=child_env)
         except subprocess.CalledProcessError as exc:
             record_stage_error(run_dir, spec, config, exc)
             if mode == "information":
