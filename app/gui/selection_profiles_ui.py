@@ -4,7 +4,7 @@ from typing import Any
 
 import streamlit as st
 
-from selection_profiles import (
+from app.core.selection_profiles import (
     PROFILE_FIELDS,
     apply_selection_profile,
     matching_profile,
