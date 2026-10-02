@@ -235,7 +235,7 @@ def main() -> None:
         v10._render_new_analysis_tabs(config)
         return
 
-    run_dir = base.PROJECT_ROOT / selected
+    run_dir = base.resolve_run_dir(selected)
     is_today = run_dir.name == base.TODAY_RUN.name
     st.sidebar.success("Текущий день: модули можно обновлять") if is_today else st.sidebar.info("Архив: только просмотр")
     _render_existing_tabs(run_dir, config, is_today)
