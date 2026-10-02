@@ -20,7 +20,6 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-import requests
 
 ROOT = Path(__file__).resolve().parents[2]
 CORE = ROOT / "app" / "core"
@@ -29,25 +28,18 @@ for _path in (str(CORE), str(SRC), str(ROOT)):
     if _path not in sys.path:
         sys.path.insert(0, _path)
 
-from moex_bond_search_and_analysis.ratings import (
-    enrich_issuer_identifiers,
-    fetch_expert_ra_ratings,
-    merge_rating_rows,
-)
+from moex_bond_search_and_analysis.ratings import enrich_issuer_identifiers
 from moex_bond_search_and_analysis.financials import (
     DEFAULT_CACHE_DAYS,
     DEFAULT_DELAY_SECONDS,
     DEFAULT_RETRIES,
     DEFAULT_WORKERS,
-    fetch_financials_for_inns,
-    merge_financial_rows,
 )
 from moex_bond_search_and_analysis.issuer_credit_model import classify_issuer
 from moex_bond_search_and_analysis.cbr_banks import (
     BANK_COLUMNS,
     DEFAULT_BANK_CACHE_DAYS,
     DEFAULT_BANK_DELAY_SECONDS,
-    fetch_bank_metrics_for_issuers,
 )
 from credit_engine import (
     CreditResult,
@@ -66,6 +58,14 @@ from credit_engine import (
     safe_float,
 )
 from credit_report import list_html, write_excel, write_html
+from credit_sources import (
+    BankRefreshOptions,
+    FinancialRefreshOptions,
+    classify_population,
+    refresh_bank_metrics,
+    refresh_financials,
+    refresh_ratings,
+)
 
 
 RATING_TEMPLATE_COLUMNS = [
@@ -270,20 +270,11 @@ def main() -> int:
         source = args.input or find_latest_deep_file(Path.cwd())
         ratings_path, financials_path = create_templates(args.data_dir)
         ratings = load_optional_table(ratings_path, RATING_TEMPLATE_COLUMNS)
-        if not args.no_fetch_ratings:
-            try:
-                fetched_ratings = fetch_expert_ra_ratings()
-                ratings = merge_rating_rows(ratings, fetched_ratings)
-                ratings.to_excel(ratings_path, index=False)
-                print(
-                    f"Автоматически загружено рейтингов «Эксперт РА»: "
-                    f"{len(fetched_ratings)}. Кэш: {ratings_path}"
-                )
-            except (requests.RequestException, OSError, ValueError) as exc:
-                print(
-                    f"Внимание: автоматическое обновление рейтингов не удалось: {exc}. "
-                    "Используется существующий локальный файл."
-                )
+        ratings = refresh_ratings(
+            ratings,
+            ratings_path,
+            enabled=not args.no_fetch_ratings,
+        )
         financials = load_optional_table(financials_path, FINANCIAL_TEMPLATE_COLUMNS)
         deep = load_deep(source)
         deep, identity_failures = enrich_issuer_identifiers(deep)
@@ -295,55 +286,21 @@ def main() -> int:
                 + ", ".join(identity_failures)
             )
 
-        if not args.no_fetch_financials:
-            try:
-                cache_dir = args.data_dir / "financial_cache" / "fns_bfo"
-                corporate_inns: list[str] = []
-                issuer_type_counts: dict[str, int] = {}
-                for _, source_row in deep.iterrows():
-                    matched_rating = best_match(source_row, ratings)
-                    model = classify_issuer(
-                        source_row.get("Полное наименование"),
-                        "" if matched_rating is None else matched_rating.get("Эмитент"),
-                    )
-                    issuer_type_counts[model.label] = issuer_type_counts.get(model.label, 0) + 1
-                    if model.key == "corporate":
-                        corporate_inns.append(str(source_row.get("ИНН") or ""))
+        population = classify_population(deep, ratings)
 
-                print(
-                    "Типы эмитентов перед финансовым сбором: "
-                    + ", ".join(f"{key}: {value}" for key, value in sorted(issuer_type_counts.items()))
-                )
-                fetched_financials, financial_stats = fetch_financials_for_inns(
-                    corporate_inns,
-                    cache_dir=cache_dir,
-                    cache_days=max(0, args.financial_cache_days),
-                    workers=max(1, min(args.financial_workers, 4)),
-                    delay_seconds=max(0.0, args.financial_delay_seconds),
-                    retries=max(1, args.financial_retries),
-                )
-                financials = merge_financial_rows(financials, fetched_financials)
-                financials.to_excel(financials_path, index=False)
-                print(
-                    "Финансы ГИР БО ФНС: "
-                    f"запрошено ИНН {financial_stats.requested}, "
-                    f"получено {financial_stats.fetched}, "
-                    f"из кэша {financial_stats.cached}, "
-                    f"нет отчётности {financial_stats.not_found}, "
-                    f"ошибок {len(financial_stats.errors)}. "
-                    f"Кэш: {financials_path}"
-                )
-                if financial_stats.errors:
-                    print(
-                        "Внимание: часть финансовых данных получить не удалось: "
-                        + "; ".join(financial_stats.errors[:10])
-                        + ("; ..." if len(financial_stats.errors) > 10 else "")
-                    )
-            except (OSError, ValueError, RuntimeError, requests.RequestException) as exc:
-                print(
-                    f"Внимание: автоматическое обновление финансов ГИР БО не удалось: {exc}. "
-                    "Используется существующий локальный файл."
-                )
+        financials = refresh_financials(
+            financials,
+            financials_path,
+            args.data_dir,
+            population,
+            enabled=not args.no_fetch_financials,
+            options=FinancialRefreshOptions(
+                cache_days=args.financial_cache_days,
+                workers=args.financial_workers,
+                delay_seconds=args.financial_delay_seconds,
+                retries=args.financial_retries,
+            ),
+        )
 
         bank_metrics_path = args.data_dir / "issuer_bank_metrics.xlsx"
         bank_metrics_table = (
@@ -351,68 +308,17 @@ def main() -> int:
             if bank_metrics_path.exists()
             else pd.DataFrame(columns=BANK_COLUMNS)
         )
-        if not args.no_fetch_bank_metrics:
-            bank_issuers: list[dict[str, str]] = []
-            seen_banks: set[str] = set()
-            for _, source_row in deep.iterrows():
-                matched_rating = best_match(source_row, ratings)
-                model = classify_issuer(
-                    source_row.get("Полное наименование"),
-                    "" if matched_rating is None else matched_rating.get("Эмитент"),
-                )
-                if model.key != "bank":
-                    continue
-                issuer_name = (
-                    "" if matched_rating is None else str(matched_rating.get("Эмитент") or "")
-                ) or str(source_row.get("Полное наименование") or "")
-                inn = str(source_row.get("ИНН") or "")
-                key = re.sub(r"\D", "", inn) or normalize(issuer_name)
-                if key in seen_banks:
-                    continue
-                seen_banks.add(key)
-                bank_issuers.append({"name": issuer_name, "inn": inn})
-            try:
-                fetched_banks, bank_stats = fetch_bank_metrics_for_issuers(
-                    bank_issuers,
-                    cache_dir=args.data_dir / "bank_cache" / "cbr_f135",
-                    cache_days=max(0, args.bank_cache_days),
-                    delay_seconds=max(0.0, args.bank_delay_seconds),
-                )
-                if not fetched_banks.empty:
-                    bank_metrics_table = pd.concat(
-                        [bank_metrics_table, fetched_banks],
-                        ignore_index=True,
-                    ).reindex(columns=BANK_COLUMNS)
-                    bank_metrics_table["_key"] = (
-                        bank_metrics_table["ИНН"].astype(str).str.replace(r"\D", "", regex=True)
-                        + "|"
-                        + bank_metrics_table["Эмитент"].astype(str).str.strip().str.lower()
-                    )
-                    bank_metrics_table = (
-                        bank_metrics_table
-                        .drop_duplicates("_key", keep="last")
-                        .drop(columns=["_key"])
-                        .reset_index(drop=True)
-                    )
-                    bank_metrics_table.to_excel(bank_metrics_path, index=False)
-                print(
-                    "Банковские нормативы ЦБ РФ: "
-                    f"запрошено {bank_stats.requested}, получено {bank_stats.fetched}, "
-                    f"из кэша {bank_stats.cached}, не найдено {bank_stats.not_found}, "
-                    f"ошибок {len(bank_stats.errors)}. "
-                    f"Кэш: {bank_metrics_path}"
-                )
-                if bank_stats.errors:
-                    print(
-                        "Внимание: часть банковских данных получить не удалось: "
-                        + "; ".join(bank_stats.errors[:10])
-                        + ("; ..." if len(bank_stats.errors) > 10 else "")
-                    )
-            except (OSError, ValueError, RuntimeError, requests.RequestException) as exc:
-                print(
-                    f"Внимание: обновление банковских нормативов ЦБ не удалось: {exc}. "
-                    "Используется существующий локальный файл, если он есть."
-                )
+        bank_metrics_table = refresh_bank_metrics(
+            bank_metrics_table,
+            bank_metrics_path,
+            args.data_dir,
+            population,
+            enabled=not args.no_fetch_bank_metrics,
+            options=BankRefreshOptions(
+                cache_days=args.bank_cache_days,
+                delay_seconds=args.bank_delay_seconds,
+            ),
+        )
 
         result = build_analysis(deep, ratings, financials, bank_metrics_table)
         type_counts = result["Тип эмитента"].value_counts().to_dict()
