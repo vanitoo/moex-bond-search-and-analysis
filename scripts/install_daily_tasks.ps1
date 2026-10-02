@@ -9,11 +9,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Python = Join-Path $ProjectRoot ".venv\Scripts\python.exe"
-$Runner = Join-Path $ProjectRoot "daily_runner.py"
+$Runner = Join-Path $ProjectRoot "bondlab.py"
 $Config = Join-Path $ProjectRoot "configs\gui_active.json"
 
 if (-not (Test-Path $Python)) { throw "Python venv не найден: $Python" }
-if (-not (Test-Path $Runner)) { throw "daily_runner.py не найден: $Runner" }
+if (-not (Test-Path $Runner)) { throw "bondlab.py не найден: $Runner" }
 
 function Install-DailyTask([string]$Name, [string]$Time) {
     $arguments = '"{0}" monitor --portfolio "{1}" --config "{2}" --amount {3}' -f $Runner, $Portfolio, $Config, $Amount
