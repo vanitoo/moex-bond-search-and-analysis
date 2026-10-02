@@ -7,7 +7,7 @@ from pathlib import Path
 
 def main() -> None:
     root = Path(__file__).resolve().parent
-    app = root / "gui_app.py"
+    app = root / "app" / "gui" / "gui_app.py"
     command = [sys.executable, "-m", "streamlit", "run", str(app)]
     process = subprocess.Popen(command, cwd=root)
     try:
