@@ -6,15 +6,15 @@ from typing import Iterable
 
 
 def runtime_pythonpath(project_root: Path, extra: Iterable[Path] = ()) -> list[str]:
-    """Return the import roots required by legacy stage subprocesses."""
+    """Return the import roots required by application subprocesses."""
 
-    app_root = project_root / "app"
+    # Runtime code imports application modules through the app.* package
+    # and integrations through the src-layout package. Keep PYTHONPATH limited
+    # to those two import roots instead of exposing internal directories as
+    # top-level modules.
     paths = [
-        app_root / "core",
-        app_root / "portfolio",
-        app_root,
-        project_root / "src",
         project_root,
+        project_root / "src",
         *extra,
     ]
     seen: set[str] = set()
