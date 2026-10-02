@@ -1,77 +1,99 @@
 # Структура проекта
 
-После рефакторинга в корне оставлены только основные точки входа и служебные каталоги.
+После рефакторинга у проекта одна пользовательская точка входа:
+
+`bondlab.py`
+
+В корне больше не должно быть рабочих `run_*.py` / `daily_runner.py`. Внутренние runner-ы находятся в `app/cli/`.
 
 ## Что запускать
-
-- `run_gui.py` — основной GUI.
-- `run_pipeline.py` — полный или частичный pipeline без GUI.
-- `daily_runner.py` — полный месячный запуск или ежедневный мониторинг портфеля.
-
-Остальные Python-файлы в корне запускать не нужно.
-
-## Активные каталоги
-
-```text
-app/
-  core/          # общая логика pipeline, master dataset, профили отбора
-  stages/        # этапы 1-10 полного анализа
-  portfolio/     # виртуальный портфель, аллокатор, мониторинг, доходы
-  gui/
-    gui_app.py   # единственная точка входа Streamlit
-    layers/      # внутренние runtime-слои GUI; напрямую не запускать
-
-src/
-  moex_bond_search_and_analysis/
-                 # пакет интеграций: MOEX, новости, рейтинги, ФНС, ЦБ и т.д.
-
-configs/         # рабочие профили конфигурации
-data/            # кэши и локальные данные
-scripts/         # установочные и системные скрипты
-tools/           # отдельные сервисные утилиты
-tests/           # тесты
-docs/            # документация
-archive/legacy/  # старые/неиспользуемые версии; pipeline их не вызывает
-```
-
-## GUI layers
-
-Файлы `app/gui/layers/gui_app_v*.py` пока остаются как внутренние слои совместимости.
-Они используются текущим `gui_app.py`, поэтому это **не мусор**, но пользователю их запускать
-и редактировать напрямую не нужно. Неиспользуемый исторический `gui_app_v5.py` перенесён
-в `archive/legacy/gui/`.
-
-Следующий отдельный рефакторинг может слить эти слои в несколько смысловых модулей
-(`dashboard.py`, `portfolio.py`, `recommendations.py`), но текущая раскладка уже
-изолирует их от рабочей поверхности проекта без изменения поведения GUI.
-
-## Быстрые команды
 
 GUI:
 
 ```powershell
-.\.venv\Scripts\python.exe .\run_gui.py
+.\.venv\Scripts\python.exe .\bondlab.py gui
 ```
 
-Полный анализ без GUI:
+Полный pipeline без GUI:
 
 ```powershell
-.\.venv\Scripts\python.exe .\run_pipeline.py `
+.\.venv\Scripts\python.exe .\bondlab.py pipeline `
   --from-stage 1 `
   --to-stage 10 `
+  --config .\configs\gui_active.json
+```
+
+Полный месячный запуск с портфелем:
+
+```powershell
+.\.venv\Scripts\python.exe .\bondlab.py full `
+  --portfolio "Название_портфеля" `
   --config .\configs\gui_active.json
 ```
 
 Ежедневный мониторинг портфеля:
 
 ```powershell
-.\.venv\Scripts\python.exe .\daily_runner.py monitor `
+.\.venv\Scripts\python.exe .\bondlab.py monitor `
   --portfolio "Название_портфеля" `
   --config .\configs\gui_active.json
 ```
 
-## Что считается legacy
+## Активная структура
 
-Всё, что лежит в `archive/legacy/`, не должно использоваться рабочим pipeline.
-Если код снова понадобится, его надо вернуть в активную структуру осознанно, а не импортировать
-напрямую из archive.
+```text
+bondlab.py              # единственная пользовательская точка входа
+
+app/
+  cli/
+    pipeline.py         # оркестратор этапов 1-10
+    daily.py            # full / monitor для портфеля
+    gui.py              # запуск Streamlit
+  core/                 # общая логика pipeline и master dataset
+  stages/               # рабочие этапы полного анализа
+  portfolio/            # виртуальный портфель, покупки, мониторинг, доходы
+  gui/
+    gui_app.py          # текущий Streamlit entrypoint
+    layers/             # внутренние runtime-слои GUI
+
+src/
+  moex_bond_search_and_analysis/
+                        # интеграции MOEX, новости, рейтинги, ФНС, ЦБ
+
+configs/                # конфигурации
+data/                   # кэши и постоянные локальные данные
+scripts/                # установка/планировщик
+tools/                  # отдельные сервисные утилиты
+tests/                  # тесты
+docs/                   # документация
+archive/legacy/         # старый код, не используемый runtime
+```
+
+## Что рабочее, а что нет
+
+Рабочий runtime:
+- `bondlab.py`;
+- всё в `app/cli`, `app/core`, `app/stages`, `app/portfolio`, `app/gui`;
+- пакет `src/moex_bond_search_and_analysis`.
+
+Не запускать вручную:
+- файлы из `app/stages` — их запускает pipeline;
+- файлы из `app/gui/layers` — это внутренние части текущего GUI;
+- файлы из `app/core` и `app/portfolio` — это библиотеки приложения.
+
+Legacy:
+- всё в `archive/legacy/` не должно импортироваться рабочим приложением.
+
+## GUI layers
+
+`app/gui/layers/gui_app_v*.py` пока остаются единственным некрасивым историческим участком.
+Они **всё ещё используются** текущим GUI, поэтому удалить их просто так нельзя. Это не мусор.
+
+Следующий безопасный этап — заменить цепочку `v2...v16` смысловыми модулями
+(`dashboard.py`, `portfolio_view.py`, `recommendations_view.py`, `runner_view.py`)
+и после этого перенести versioned-файлы в `archive/legacy/gui`.
+
+## Результаты запусков
+
+Каталоги `bond_YYYY_MM_DD/`, `reports/` и runtime-кэши — это результаты работы, а не исходный код.
+Их не нужно воспринимать как рабочие Python-модули.
