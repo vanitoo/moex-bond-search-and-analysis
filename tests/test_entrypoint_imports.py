@@ -27,3 +27,16 @@ def test_decision_entrypoint_imports_src_package(tmp_path: Path):
 def test_portfolio_monitor_entrypoint_imports_src_package(tmp_path: Path):
     result = _help_from_external_cwd("app/portfolio/portfolio_monitor.py", tmp_path)
     assert result.returncode == 0, result.stderr
+
+
+def test_unified_bondlab_entrypoint_works_from_external_cwd(tmp_path: Path):
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "bondlab.py"), "--help"],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "pipeline" in result.stdout
+    assert "monitor" in result.stdout
