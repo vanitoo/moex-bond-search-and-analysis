@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from daily_runner import latest_analysis_dir, portfolio_monitor_dir
+from app.cli.daily import latest_analysis_dir, portfolio_monitor_dir
 
 
 def test_latest_analysis_dir_prefers_latest_bond_folder(tmp_path: Path):
