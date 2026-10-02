@@ -1,0 +1,308 @@
+from __future__ import annotations
+
+import re
+from typing import Any
+
+import pandas as pd
+
+from pipeline_common import safe_float
+from moex_bond_search_and_analysis.rating_signal import build_rating_signal
+
+
+RATING_ORDER = [
+    "D", "C", "CC", "CCC", "B-", "B", "B+", "BB-", "BB", "BB+",
+    "BBB-", "BBB", "BBB+", "A-", "A", "A+", "AA-", "AA", "AA+", "AAA",
+]
+CRITICAL = (
+    "дефолт",
+    "просроч",
+    "банкрот",
+    "не покрывает процент",
+    "отрицательный операционный",
+)
+
+
+def normalize(value: Any) -> str:
+    if value is None or pd.isna(value):
+        return ""
+    return re.sub(r"\s+", " ", str(value).strip().lower().replace("ё", "е"))
+
+
+def rating(value: Any) -> str:
+    if value is None or pd.isna(value):
+        return ""
+    raw = str(value).strip()
+    if not raw or raw.lower() in {"nan", "none", "null", "—", "-"}:
+        return ""
+    text = re.sub(r"[^A-Z+\-]", "", raw.upper().replace("(RU)", "").replace("RU", ""))
+    return text if text in RATING_ORDER else ""
+
+
+def yes(value: Any) -> bool:
+    return normalize(value) in {"да", "true", "1", "yes"}
+
+
+def issuer_key(row: pd.Series | dict[str, Any]) -> str:
+    inn = str(row.get("ИНН") or row.get("inn") or "").strip().replace(" ", "")
+    if inn and inn.lower() not in {"nan", "none"}:
+        return f"inn:{inn}"
+    issuer = str(row.get("Эмитент") or row.get("issuer") or "").strip().casefold()
+    if issuer:
+        return f"issuer:{issuer}"
+    secid = str(row.get("Код ценной бумаги") or row.get("secid") or "").strip().upper()
+    return f"secid:{secid}"
+
+
+def negative_factors(row: pd.Series) -> str:
+    factors: list[str] = []
+    blockers = str(row.get("Блокеры") or "").strip()
+    warnings = str(row.get("Предупреждения") or "").strip()
+    credit_missing = str(row.get("Недостающие кредитные данные") or "").strip()
+    no_data = str(row.get("Модули без данных") or "").strip()
+    rating_adj = safe_float(row.get("Корректировка за рейтинг"), 0) or 0
+
+    if blockers and blockers != "—":
+        factors.append("СТОП: " + blockers)
+    if warnings and warnings != "—":
+        factors.append(warnings)
+    if credit_missing and credit_missing != "—":
+        factors.append("Кредитные данные: " + credit_missing)
+    if no_data and no_data != "—":
+        factors.append("Нет данных модулей: " + no_data)
+    if rating_adj < 0:
+        factors.append(f"Рейтинговые события: {rating_adj:.0f} балл.")
+    return "; ".join(dict.fromkeys(factors)) or "Явных отрицательных факторов не зафиксировано"
+
+
+def annotate_shortlist_reasons(result: pd.DataFrame, shortlist: dict[str, Any]) -> pd.DataFrame:
+    frame = result.copy()
+    selected = shortlist.get("shortlist", [])
+    selected_ids = {str(item.get("secid") or "") for item in selected}
+    selected_by_issuer = {issuer_key(item): str(item.get("secid") or "") for item in selected}
+    strong_score = int(shortlist.get("thresholds", {}).get("strong_score", 86))
+    max_size = int(shortlist.get("thresholds", {}).get("max_shortlist", 12))
+
+    reasons: list[str] = []
+    factors: list[str] = []
+    for _, row in frame.iterrows():
+        secid = str(row.get("Код ценной бумаги") or "")
+        score = int(round(safe_float(row.get("Финальный балл"), 0) or 0))
+        admitted = str(row.get("Допущена в портфель") or "").strip().upper() == "ДА"
+        factors.append(negative_factors(row))
+
+        if secid in selected_ids:
+            reasons.append("Выбран в финальный shortlist")
+            continue
+        if not admitted:
+            blocker = str(row.get("Блокеры") or "").strip()
+            if blocker and blocker != "—":
+                reasons.append("Не допущен: " + blocker)
+            else:
+                reasons.append(f"Не допущен: финальный балл {score} ниже порога покупки 82")
+            continue
+        if score < strong_score:
+            reasons.append(f"Допущен, но балл {score} ниже порога сильного кандидата {strong_score}")
+            continue
+
+        chosen = selected_by_issuer.get(issuer_key(row))
+        if chosen and chosen != secid:
+            reasons.append(f"Дубликат эмитента: в shortlist выбран выпуск {chosen}")
+        elif len(selected_ids) >= max_size:
+            reasons.append(f"Сильный кандидат, но не вошёл в лимит shortlist {max_size}")
+        else:
+            reasons.append("Сильный кандидат вне shortlist по итоговому ранжированию")
+
+    frame["Почему потерял баллы"] = factors
+    frame["Почему не shortlist"] = reasons
+    frame["В финальном shortlist"] = (
+        frame["Код ценной бумаги"]
+        .astype(str)
+        .isin(selected_ids)
+        .map({True: "ДА", False: "НЕТ"})
+    )
+    return frame
+
+
+def decide(
+    row: pd.Series,
+    enabled: set[str],
+    source_name: str,
+    rating_events: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Pure final-decision calculation for one security."""
+
+    scores: list[tuple[str, float, float]] = []
+    blockers: list[str] = []
+    warnings: list[str] = []
+    reasons: list[str] = []
+    used: list[str] = []
+    no_data: list[str] = []
+
+    market_score = safe_float(row.get("Оценка, 0-100"))
+    deep_score = safe_float(row.get("Итоговый балл"))
+    credit_score = safe_float(row.get("Итоговый кредитный балл"))
+
+    if "analysis" in enabled and market_score is not None:
+        scores.append(("Первичный анализ", market_score, 1.0))
+        used.append("analysis")
+    if "deep_analysis" in enabled and deep_score is not None:
+        scores.append(("Глубокий анализ", deep_score, 1.2))
+        used.append("deep_analysis")
+    if "credit" in enabled:
+        if credit_score is not None:
+            scores.append(("Кредитный анализ", credit_score, 1.3))
+            used.append("credit")
+        else:
+            no_data.append("credit")
+
+    if not scores:
+        y = safe_float(row.get("Доходность"), 0) or 0
+        price = safe_float(row.get("Цена, %") or row.get("Цена"), 100) or 100
+        duration = safe_float(row.get("Дюрация, месяцев"), 24) or 24
+        base = 50
+        if 15 <= y <= 25:
+            base += 15
+        elif y > 30:
+            base -= 10
+        if 85 <= price <= 110:
+            base += 10
+        if duration <= 18:
+            base += 10
+        scores.append(("Базовый рыночный отбор", max(0, min(100, base)), 1.0))
+        used.append("market_search")
+
+    secid = str(row.get("Код ценной бумаги") or "").strip().upper()
+    current_rating = rating(row.get("Рейтинг"))
+    credit_missing = str(row.get("Недостающие данные") or "").strip()
+    risks = normalize(row.get("Риски") or row.get("Риски и ограничения"))
+    if "credit" in enabled:
+        if current_rating in {"D", "C", "CC", "CCC"}:
+            blockers.append(f"Недопустимый рейтинг {current_rating}")
+        if any(marker in risks for marker in CRITICAL):
+            blockers.append("Критическое событие в кредитных рисках")
+
+    signal = build_rating_signal(rating_events, secid)
+    rating_event_adjustment = signal.bonus - signal.penalty
+    if rating_events:
+        used.append("rating_events")
+    if signal.hard_stop:
+        blockers.extend(signal.reasons or ("Критический рейтинговый сигнал",))
+    warnings.extend(signal.warnings)
+    if signal.positives:
+        reasons.extend(signal.positives)
+
+    if "news" in enabled:
+        critical_news = yes(row.get("Критический новостной стоп"))
+        news_files = int(safe_float(row.get("Новостных файлов"), 0) or 0)
+        if critical_news:
+            blockers.append("Критический новостной стоп")
+        elif news_files == 0:
+            no_data.append("news")
+        else:
+            used.append("news")
+
+    max_amount = safe_float(row.get("Максимум к покупке, руб."))
+    max_qty = int(safe_float(row.get("Максимум к покупке, шт."), 0) or 0)
+    spread = safe_float(row.get("Спред, %"))
+    if "liquidity" in enabled:
+        if max_amount is None:
+            no_data.append("liquidity")
+        elif max_amount <= 0 or max_qty <= 0:
+            blockers.append("Нет подтверждённого доступного объёма покупки")
+        else:
+            used.append("liquidity")
+            if spread is not None and spread > 3:
+                blockers.append(f"Критически широкий bid/ask-спред {spread:.2f}%")
+            elif spread is not None and spread > 1.5:
+                warnings.append(f"Широкий bid/ask-спред {spread:.2f}%")
+
+    ofz_bp = safe_float(row.get("Спред к ОФЗ, б.п.") or row.get("Спред, б.п."))
+    if "ofz_spread" in enabled:
+        if ofz_bp is None:
+            no_data.append("ofz_spread")
+        else:
+            used.append("ofz_spread")
+            if ofz_bp >= 1000:
+                warnings.append(f"Экстремальный спред к ОФЗ {ofz_bp:.0f} б.п.")
+            elif ofz_bp >= 600:
+                warnings.append(f"Высокий спред к ОФЗ {ofz_bp:.0f} б.п.")
+
+    weighted = sum(value * weight for _, value, weight in scores) / sum(
+        weight for _, _, weight in scores
+    )
+    score = int(round(max(0, min(100, weighted + rating_event_adjustment))))
+    if blockers:
+        decision, eligible, max_share = "Не покупать", False, "0%"
+        score = min(score, 25)
+    elif score >= 82:
+        decision, eligible, max_share = "Купить", True, "до 3–5%"
+    elif score >= 68:
+        decision, eligible, max_share = "Рассматривать", False, "до 1–3% после проверки"
+    elif score >= 50:
+        decision, eligible, max_share = "Требуется ручная проверка", False, "до 1%"
+    else:
+        decision, eligible, max_share = "Не покупать", False, "0%"
+
+    score_breakdown = " + ".join(
+        f"{name} {value:.0f}×{weight:g}" for name, value, weight in scores
+    )
+    score_breakdown += f" → {score}/100"
+    if rating_event_adjustment:
+        score_breakdown += f" (рейтинг-события {rating_event_adjustment:+d})"
+
+    reasons.extend(f"{name}: {value:.0f}/100" for name, value, _ in scores)
+    if rating_event_adjustment:
+        reasons.append(f"Рейтинговые события: {rating_event_adjustment:+d} баллов")
+
+    disabled = sorted(
+        {
+            "cashflow",
+            "news",
+            "liquidity",
+            "ofz_spread",
+            "analysis",
+            "deep_analysis",
+            "credit",
+        }
+        - enabled
+    )
+    completeness = (
+        "Полная"
+        if not no_data
+        else f"Неполная: нет данных {', '.join(sorted(set(no_data)))}"
+    )
+
+    return {
+        "Полное наименование": row.get("Полное наименование"),
+        "Код ценной бумаги": row.get("Код ценной бумаги"),
+        "Эмитент": row.get("Эмитент"),
+        "ИНН": row.get("ИНН"),
+        "Тип эмитента": row.get("Тип эмитента"),
+        "Ключ модели": row.get("Ключ модели"),
+        "Методика кредитного анализа": row.get("Методика кредитного анализа"),
+        "Доходность": row.get("Доходность"),
+        "Финальное решение": decision,
+        "Допущена в портфель": "ДА" if eligible else "НЕТ",
+        "Финальный балл": score,
+        "Разбор балла": score_breakdown,
+        "До сильного порога, баллов": max(0, 86 - score),
+        "Максимальная доля": max_share,
+        "Максимум к покупке, руб.": round(max_amount or 0, 2),
+        "Максимум к покупке, шт.": max_qty,
+        "Спред, %": spread,
+        "Рейтинг": current_rating or signal.latest_rating,
+        "Последнее рейтинговое действие": signal.latest_action or "—",
+        "Рейтинговое агентство": signal.latest_agency or "—",
+        "Прогноз рейтинга": signal.latest_forecast or row.get("Прогноз") or "—",
+        "Дата рейтингового события": signal.latest_event_date or "—",
+        "Корректировка за рейтинг": rating_event_adjustment,
+        "Причины": "; ".join(reasons) or "—",
+        "Блокеры": "; ".join(dict.fromkeys(blockers)) or "—",
+        "Предупреждения": "; ".join(dict.fromkeys(warnings)) or "—",
+        "Учтённые модули": "; ".join(sorted(set(used))) or "—",
+        "Отключённые модули": "; ".join(disabled) or "—",
+        "Модули без данных": "; ".join(sorted(set(no_data))) or "—",
+        "Полнота оценки": completeness,
+        "Недостающие кредитные данные": credit_missing or "—",
+        "Базовый источник": source_name,
+    }
