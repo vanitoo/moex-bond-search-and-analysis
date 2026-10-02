@@ -5,9 +5,9 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-import base
-from portfolio_impact import infer_issuer, risk_level, safe_float
-from portfolio_store import list_portfolios, load_portfolio
+from app.gui.features import base
+from app.portfolio.portfolio_impact import infer_issuer, risk_level, safe_float
+from app.portfolio.portfolio_store import list_portfolios, load_portfolio
 
 
 PORTFOLIO_DIR = base.PROJECT_ROOT / "data" / "virtual_portfolios"
