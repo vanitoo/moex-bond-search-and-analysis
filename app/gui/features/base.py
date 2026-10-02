@@ -13,7 +13,7 @@ import streamlit as st
 
 from master_dataset import build_master_dataset
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 RUNS_ROOT = PROJECT_ROOT / "runs"
 DEFAULT_CONFIG = PROJECT_ROOT / "configs" / "balanced.json"
 TODAY_RUN = RUNS_ROOT / f"bond_{datetime.now():%Y_%m_%d}"
