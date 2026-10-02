@@ -119,3 +119,12 @@ Legacy:
 - `app/cli/pipeline.py` — только оркестрация запуска этапов и CLI-параметров.
 
 Новые правила: не дублировать `STAGES`, описания этапов и `ModuleSpec` в разных файлах; новые scoring-правила сначала добавлять в engine и покрывать unit-тестом, а не писать непосредственно в CLI-скрипте.
+## GUI после третьего рефакторинга
+
+- `app/gui/features/current.py` — единственная композиция Streamlit-приложения и единственный `main()` в `features/`.
+- Остальные `*_view.py` и `portfolio_workspace.py` — только render-функции; они больше не запускают друг друга.
+- Удалены runtime-monkeypatch цепочки между `tabs`, `buy_plan`, `portfolio_workspace`, `module_state` и `runner_view`.
+- Исторические alias-имена `v4`, `v10`, `_v14` и т. п. запрещены структурным тестом `tests/test_gui_structure.py`.
+- Состояние модулей, запуск pipeline и кнопка копирования лога теперь находятся в общем GUI runtime (`features/base.py`).
+- Кнопка обновления риск-мониторинга использует единый entrypoint `bondlab.py monitor`, а не удалённый `daily_runner.py`.
+
