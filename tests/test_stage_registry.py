@@ -1,8 +1,11 @@
 from stage_registry import (
     BY_SCRIPT,
+    GUI_MODULES,
+    MODULE_DEPENDENCIES,
     MODULE_DESCRIPTIONS,
     PIPELINE_STAGES,
     PIPELINE_STAGE_SCRIPTS,
+    RESULT_FILES,
     resolve_market_script,
 )
 
@@ -25,3 +28,12 @@ def test_every_runtime_script_has_description():
     for script in BY_SCRIPT:
         assert script in MODULE_DESCRIPTIONS
         assert MODULE_DESCRIPTIONS[script]
+
+
+def test_gui_and_pipeline_share_logical_module_keys():
+    gui_keys = [key for key, _, _ in GUI_MODULES]
+    pipeline_keys = [stage.key for stage in PIPELINE_STAGES]
+    assert gui_keys == pipeline_keys
+    assert MODULE_DEPENDENCIES["credit"] == ("deep_analysis",)
+    assert RESULT_FILES["decision"] == "bond_decisions_*.xlsx"
+    assert RESULT_FILES["news_search"] == "news/**/*"
