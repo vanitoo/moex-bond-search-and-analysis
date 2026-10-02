@@ -6,8 +6,8 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-import base
-from portfolio_store import list_portfolios
+from app.gui.features import base
+from app.portfolio.portfolio_store import list_portfolios
 
 
 PORTFOLIO_DIR = base.PROJECT_ROOT / "data" / "virtual_portfolios"
