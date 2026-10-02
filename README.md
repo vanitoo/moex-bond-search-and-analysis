@@ -7,13 +7,20 @@
 Быстрый запуск GUI:
 
 ```powershell
-.\.venv\Scripts\python.exe .\run_gui.py
+.\.venv\Scripts\python.exe .\bondlab.py gui
 ```
 
 Полный анализ без GUI:
 
 ```powershell
-.\.venv\Scripts\python.exe .\run_pipeline.py --from-stage 1 --to-stage 10 --config .\configs\gui_active.json
+.\.venv\Scripts\python.exe .\bondlab.py pipeline --from-stage 1 --to-stage 10 --config .\configs\gui_active.json
+```
+
+
+Ежедневный мониторинг портфеля:
+
+```powershell
+.\.venv\Scripts\python.exe .\bondlab.py monitor --portfolio "Основной" --config .\configs\gui_active.json
 ```
 
 Несмотря на обилие публичных сервисов для поиска облигаций, данное решение выделяется тем, что это open source решение, которое:
