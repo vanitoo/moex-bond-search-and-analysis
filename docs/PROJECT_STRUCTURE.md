@@ -50,11 +50,16 @@ app/
     daily.py            # full / monitor для портфеля
     gui.py              # запуск Streamlit
   core/                 # общая логика приложения
-    stage_registry.py    # единый реестр этапов 1–10
+    stage_registry.py    # единый реестр этапов 1–10, GUI metadata и зависимости
+    stage_arguments.py   # CLI-параметры отдельных этапов
     pipeline_architecture.py
     pipeline_common.py
+    run_paths.py         # поиск/создание runs
+    runtime_env.py       # единый PYTHONPATH/env для subprocess
     master_dataset.py
     credit_engine.py     # чистая логика кредитного скоринга
+    credit_sources.py    # рейтинги / ГИР БО / банковские нормативы
+    credit_report.py     # Excel/HTML кредитного анализа
     decision_engine.py   # чистая логика финального решения
   stages/               # CLI-обвязка этапов: чтение/запись/оркестрация
   portfolio/            # виртуальный портфель, покупки, мониторинг, доходы
@@ -108,6 +113,7 @@ Legacy:
 ## Граница ответственности после второго рефакторинга
 
 - `app/core/*_engine.py` — детерминированная бизнес-логика без сетевых запросов и записи отчётов.
+- `app/core/credit_sources.py` — сетевые источники кредитного слоя; `credit_report.py` — только представление результатов.
 - `app/stages/*.py` — загрузка входных файлов, вызов внешних источников, сохранение Excel/HTML и CLI.
 - `app/core/stage_registry.py` — единственный источник правды о номерах, именах, output-pattern и описаниях этапов.
 - `app/cli/pipeline.py` — только оркестрация запуска этапов и CLI-параметров.
