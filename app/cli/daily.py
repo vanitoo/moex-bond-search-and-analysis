@@ -6,6 +6,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from app.core.run_paths import latest_analysis_run
 from app.core.runtime_env import build_subprocess_env
 
 
@@ -20,20 +21,7 @@ def _run(command: list[str], cwd: Path) -> None:
 
 
 def latest_analysis_dir(root: Path) -> Path | None:
-    roots = [root / "runs", root]
-    candidates: list[Path] = []
-    for base in roots:
-        if not base.exists():
-            continue
-        candidates.extend([
-            path for path in base.glob("bond_????_??_??")
-            if path.is_dir() and (path / "decisions").exists()
-        ])
-    if not candidates:
-        for base in roots:
-            if base.exists():
-                candidates.extend([path for path in base.glob("bond_????_??_??") if path.is_dir()])
-    return max(candidates, key=lambda path: path.name) if candidates else None
+    return latest_analysis_run(root)
 
 
 def _safe_name(value: str) -> str:
