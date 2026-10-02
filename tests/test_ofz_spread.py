@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 
 
-MODULE_PATH = Path(__file__).resolve().parents[1] / "4c_bonds_ofz_spread.py"
+MODULE_PATH = Path(__file__).resolve().parents[1] / "app" / "stages" / "4c_bonds_ofz_spread.py"
 SPEC = importlib.util.spec_from_file_location("bonds_ofz_spread", MODULE_PATH)
 assert SPEC and SPEC.loader
 ofz = importlib.util.module_from_spec(SPEC)
