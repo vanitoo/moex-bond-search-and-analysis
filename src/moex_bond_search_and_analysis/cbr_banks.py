@@ -45,7 +45,7 @@ def _norm(value: Any) -> str:
     text = str(value or "").lower().replace("ё", "е")
     for char in ("«", "»", '"', "'", "(", ")"):
         text = text.replace(char, " ")
-    return re.sub(r"\\s+", " ", text).strip()
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _number(value: Any) -> float | None:
