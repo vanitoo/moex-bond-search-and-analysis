@@ -34,5 +34,5 @@ addopts = [
     "--cov=.",
     "--cov-branch",
 ]
-pythonpath = ["src", "app/core", "app/portfolio", "app", "app/gui", "app/gui/layers"]
+pythonpath = ["src", "app/core", "app/portfolio", "app", "app/gui", "app/gui/features"]
 
