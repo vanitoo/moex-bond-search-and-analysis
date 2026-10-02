@@ -1,6 +1,6 @@
 from argparse import Namespace
 
-import run_pipeline
+from app.cli import pipeline as run_pipeline
 
 
 def test_selected_stage_numbers_keeps_pipeline_order():
