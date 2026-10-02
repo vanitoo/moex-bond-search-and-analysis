@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import runpy
 import sys
-from pathlib import Path
+from collections.abc import Callable
 
-ROOT = Path(__file__).resolve().parent
-CLI_DIR = ROOT / "app" / "cli"
 
 USAGE = """MOEX Bond Lab
 
@@ -22,9 +19,15 @@ Examples:
 """
 
 
-def _run(script: Path, argv: list[str]) -> None:
-    sys.argv = [str(script), *argv]
-    runpy.run_path(str(script), run_name="__main__")
+def _invoke(main_func: Callable[[], None], argv: list[str]) -> None:
+    """Run an internal CLI while preserving the outer process argv."""
+
+    previous = sys.argv[:]
+    try:
+        sys.argv = [previous[0], *argv]
+        main_func()
+    finally:
+        sys.argv = previous
 
 
 def main() -> None:
@@ -38,15 +41,21 @@ def main() -> None:
     if command == "gui":
         if rest:
             raise SystemExit("Команда gui не принимает дополнительные параметры")
-        _run(CLI_DIR / "gui.py", [])
+        from app.cli.gui import main as gui_main
+
+        _invoke(gui_main, [])
         return
 
     if command == "pipeline":
-        _run(CLI_DIR / "pipeline.py", rest)
+        from app.cli.pipeline import main as pipeline_main
+
+        _invoke(pipeline_main, rest)
         return
 
     if command in {"full", "monitor"}:
-        _run(CLI_DIR / "daily.py", [command, *rest])
+        from app.cli.daily import main as daily_main
+
+        _invoke(daily_main, [command, *rest])
         return
 
     raise SystemExit(f"Неизвестная команда: {command}\n\n{USAGE}")
