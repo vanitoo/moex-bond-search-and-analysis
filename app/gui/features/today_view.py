@@ -49,7 +49,7 @@ def render_today(run_dir: Path) -> None:
     name = st.selectbox("Портфель", list(portfolios), key="today_portfolio")
     payload = _load_today(name)
     if not payload:
-        st.info("Для этого портфеля ещё нет daily_actions. Запустите daily_runner.py full или monitor.")
+        st.info("Для этого портфеля ещё нет daily_actions. Запустите `python bondlab.py monitor --portfolio \"...ваш портфель...\"`.")
         return
 
     st.caption(f"Сформировано: {payload.get('created_at', '—')} · run: {payload.get('run_dir', '—')}")
