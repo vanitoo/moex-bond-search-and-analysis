@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from portfolio_impact import deep_get, safe_float
+from app.portfolio.portfolio_impact import deep_get, safe_float
 
 
 STAGES = [
