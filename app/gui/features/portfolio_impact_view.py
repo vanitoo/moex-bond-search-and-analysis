@@ -9,8 +9,6 @@ import base
 from portfolio_impact import load_portfolios, simulate_purchase
 
 
-_original_render_candidates = base.render_candidates
-
 
 def _fmt(value: Any, digits: int = 1) -> str:
     try:
@@ -156,17 +154,3 @@ def render_portfolio_impact(run_dir) -> None:
             "Ликвидность": "OK" if item.get("liquidity_ok") is True else ("Выше лимита" if item.get("liquidity_ok") is False else "Нет данных"),
         })
     st.dataframe(pd.DataFrame(quick_rows), use_container_width=True, hide_index=True)
-
-
-def render_candidates(run_dir) -> None:
-    _original_render_candidates(run_dir)
-    render_portfolio_impact(run_dir)
-
-
-def main() -> None:
-    base.render_candidates = render_candidates
-    base.main()
-
-
-if __name__ == "__main__":
-    main()
