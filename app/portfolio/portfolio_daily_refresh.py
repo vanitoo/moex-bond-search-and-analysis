@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import subprocess
 import sys
 from datetime import datetime
@@ -20,6 +19,7 @@ for _path in (str(CORE_ROOT), str(SRC_ROOT), str(PROJECT_ROOT)):
 import requests
 
 from pipeline_common import latest, safe_float
+from runtime_env import build_subprocess_env
 from portfolio_store import load_portfolio
 from moex_bond_search_and_analysis.rating_signal import build_rating_signal, load_rating_events
 
@@ -28,13 +28,12 @@ MOEX = "https://iss.moex.com/iss"
 
 def _run(command: list[str], cwd: Path) -> None:
     print("\n> " + " ".join(command))
-    project_root = Path(__file__).resolve().parent.parent
-    env = os.environ.copy()
-    pythonpath = [str(project_root / "app"), str(project_root / "src"), str(project_root)]
-    if env.get("PYTHONPATH"):
-        pythonpath.append(env["PYTHONPATH"])
-    env["PYTHONPATH"] = os.pathsep.join(pythonpath)
-    subprocess.run(command, cwd=cwd, check=True, env=env)
+    subprocess.run(
+        command,
+        cwd=cwd,
+        check=True,
+        env=build_subprocess_env(PROJECT_ROOT),
+    )
 
 
 def _rows(payload: dict[str, Any], block: str) -> list[dict[str, Any]]:
