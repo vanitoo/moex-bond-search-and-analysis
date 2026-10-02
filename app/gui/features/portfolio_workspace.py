@@ -9,10 +9,10 @@ import pandas as pd
 import streamlit as st
 
 from app.core.runtime_env import build_subprocess_env
-import base
-from portfolio_income import analyze_portfolio_income, write_report
-from portfolio_manual import lookup_bond, make_position
-from portfolio_store import list_portfolios, load_portfolio, save_portfolio, upsert_position
+from app.gui.features import base
+from app.portfolio.portfolio_income import analyze_portfolio_income, write_report
+from app.portfolio.portfolio_manual import lookup_bond, make_position
+from app.portfolio.portfolio_store import list_portfolios, load_portfolio, save_portfolio, upsert_position
 
 PORTFOLIO_DIR = base.PROJECT_ROOT / "data" / "virtual_portfolios"
 REPORT_DIR = base.PROJECT_ROOT / "reports"
