@@ -112,8 +112,8 @@ def render_recommendations(run_dir) -> None:
         return
 
     col1, col2 = st.columns([2, 1])
-    portfolio_name = col1.selectbox("Портфель", list(portfolios), key="rec_portfolio_v6")
-    amount = col2.number_input("Сумма одной покупки, ₽", min_value=1_000.0, value=50_000.0, step=5_000.0, key="rec_amount_v6")
+    portfolio_name = col1.selectbox("Портфель", list(portfolios), key="rec_portfolio")
+    amount = col2.number_input("Сумма одной покупки, ₽", min_value=1_000.0, value=50_000.0, step=5_000.0, key="rec_amount")
     portfolio = load_portfolio(PORTFOLIO_DIR, portfolio_name)
 
     saved = [secid for secid in base.saved_candidates(run_dir) if secid in by_secid]
@@ -121,7 +121,7 @@ def render_recommendations(run_dir) -> None:
         "Что анализировать",
         ["Мой список кандидатов", "Все бумаги текущего master"],
         horizontal=True,
-        key="rec_scope_v6",
+        key="rec_scope",
     )
     secids = saved if scope == "Мой список кандидатов" else list(by_secid)
     if scope == "Мой список кандидатов" and not secids:
@@ -163,7 +163,7 @@ def render_recommendations(run_dir) -> None:
         "Подробное объяснение",
         options,
         format_func=lambda secid: next(_action_message(item) for item in results if item["secid"] == secid),
-        key="rec_detail_v6",
+        key="rec_detail",
     )
     item = next(item for item in results if item["secid"] == selected)
     scenario = item["scenario"]
