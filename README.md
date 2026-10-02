@@ -2,7 +2,7 @@
 
 Этот репозиторий содержит Python-скрипты, которые помогают частным инвесторам находить ликвидные облигации, анализировать денежные потоки и отслеживать новости эмитентов. 
 
-> **Текущая структура проекта:** в корне оставлены только три рабочих entrypoint-а: `run_gui.py`, `run_pipeline.py` и `daily_runner.py`. Активный код разложен по `app/core`, `app/stages`, `app/portfolio`, `app/gui` и `src/`. Старые версии находятся в `archive/legacy`. Подробно: [`docs/PROJECT_STRUCTURE.md`](docs/PROJECT_STRUCTURE.md).
+> **Текущая структура проекта:** в корне одна пользовательская точка входа — `bondlab.py`. Рабочий код разложен по `app/cli`, `app/core`, `app/stages`, `app/portfolio`, `app/gui` и `src/`. Старые версии находятся в `archive/legacy`. Подробно: [`docs/PROJECT_STRUCTURE.md`](docs/PROJECT_STRUCTURE.md).
 
 Быстрый запуск GUI:
 
