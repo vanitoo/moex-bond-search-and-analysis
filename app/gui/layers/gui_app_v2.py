@@ -232,7 +232,7 @@ def config_editor() -> dict[str, Any]:
 def execute_modules(run_dir: Path, modules: list[str], config_path: Path, refresh_ratings: bool) -> tuple[int, str]:
     run_dir.mkdir(parents=True, exist_ok=True)
     python_executable = project_python()
-    command = [str(python_executable), str(PROJECT_ROOT / "run_pipeline.py"), "--run-dir", str(run_dir), "--config", str(config_path)]
+    command = [str(python_executable), str(PROJECT_ROOT / "bondlab.py"), "pipeline", "--run-dir", str(run_dir), "--config", str(config_path)]
     for key in modules:
         command += ["--only-module", key]
     if refresh_ratings:
