@@ -54,7 +54,7 @@ app/
   portfolio/            # виртуальный портфель, покупки, мониторинг, доходы
   gui/
     gui_app.py          # текущий Streamlit entrypoint
-    layers/             # внутренние runtime-слои GUI
+    features/           # смысловые модули текущего GUI
 
 src/
   moex_bond_search_and_analysis/
@@ -78,20 +78,20 @@ archive/legacy/         # старый код, не используемый run
 
 Не запускать вручную:
 - файлы из `app/stages` — их запускает pipeline;
-- файлы из `app/gui/layers` — это внутренние части текущего GUI;
+- файлы из `app/gui/features` — это внутренние части текущего GUI;
 - файлы из `app/core` и `app/portfolio` — это библиотеки приложения.
 
 Legacy:
 - всё в `archive/legacy/` не должно импортироваться рабочим приложением.
 
-## GUI layers
+## GUI features
 
-`app/gui/layers/gui_app_v*.py` пока остаются единственным некрасивым историческим участком.
-Они **всё ещё используются** текущим GUI, поэтому удалить их просто так нельзя. Это не мусор.
+Историческая цепочка `gui_app_v2...v16` удалена из рабочего runtime.
+Текущий интерфейс теперь разбит на смысловые файлы в `app/gui/features/`:
+`base.py`, `today_view.py`, `portfolio_view.py`, `recommendations_view.py`,
+`buy_plan_view.py`, `portfolio_workspace.py` и другие.
 
-Следующий безопасный этап — заменить цепочку `v2...v16` смысловыми модулями
-(`dashboard.py`, `portfolio_view.py`, `recommendations_view.py`, `runner_view.py`)
-и после этого перенести versioned-файлы в `archive/legacy/gui`.
+Их не нужно запускать вручную: сборкой управляет `app/gui/gui_app.py`, а пользователь запускает `bondlab.py gui`.
 
 ## Результаты запусков
 
