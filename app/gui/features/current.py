@@ -4,15 +4,15 @@ from pathlib import Path
 
 import streamlit as st
 
-import base
-import bond_journey_view
-import buy_plan_view
-import portfolio_charts_view
-import portfolio_view
-import portfolio_workspace
-import recommendations_view
-import tabs
-import today_view
+from app.gui.features import base
+from app.gui.features import bond_journey_view
+from app.gui.features import buy_plan_view
+from app.gui.features import portfolio_charts_view
+from app.gui.features import portfolio_view
+from app.gui.features import portfolio_workspace
+from app.gui.features import recommendations_view
+from app.gui.features import tabs
+from app.gui.features import today_view
 
 
 def render_new_analysis_tabs(config: dict) -> None:
