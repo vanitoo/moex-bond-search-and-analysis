@@ -169,3 +169,22 @@ GUI_MODULES: tuple[tuple[str, str, str], ...] = (
     ("credit", "7. Кредитный анализ", "Рейтинги и финансовые показатели"),
     ("decision", "8. Финальное решение", "Работает при любом наборе включённых модулей"),
 )
+
+
+MODULE_DEPENDENCIES: dict[str, tuple[str, ...]] = {
+    "market_search": (),
+    "cashflow": ("market_search",),
+    "news_search": ("market_search",),
+    "news": ("market_search", "news_search"),
+    "liquidity": ("market_search",),
+    "ofz_spread": ("market_search",),
+    "analysis": ("market_search", "cashflow", "news", "liquidity", "ofz_spread"),
+    "deep_analysis": ("analysis",),
+    "credit": ("deep_analysis",),
+    "decision": (),
+}
+
+RESULT_FILES: dict[str, str | None] = {
+    stage.key: stage.output_pattern for stage in PIPELINE_STAGES
+}
+RESULT_FILES["news_search"] = "news/**/*"
