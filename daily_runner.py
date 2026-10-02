@@ -11,7 +11,13 @@ from pathlib import Path
 def _run(command: list[str], cwd: Path) -> None:
     print("\n> " + " ".join(command))
     env = os.environ.copy()
-    pythonpath = [str(cwd / "app"), str(cwd / "src"), str(cwd)]
+    pythonpath = [
+        str(cwd / "app" / "core"),
+        str(cwd / "app" / "portfolio"),
+        str(cwd / "app"),
+        str(cwd / "src"),
+        str(cwd),
+    ]
     if env.get("PYTHONPATH"):
         pythonpath.append(env["PYTHONPATH"])
     env["PYTHONPATH"] = os.pathsep.join(pythonpath)
