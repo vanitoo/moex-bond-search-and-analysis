@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 import os
 from pathlib import Path
 
-import run_pipeline
+from app.cli import pipeline as run_pipeline
 
 
 CONFIG = {"modules": {"credit": {}}}
