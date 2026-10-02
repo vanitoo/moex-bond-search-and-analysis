@@ -12,7 +12,7 @@ import streamlit as st
 
 from master_dataset import build_master_dataset
 from runtime_env import build_subprocess_env
-from stage_registry import GUI_MODULES
+from stage_registry import GUI_MODULES, MODULE_DEPENDENCIES, RESULT_FILES as STAGE_RESULT_FILES
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 RUNS_ROOT = PROJECT_ROOT / "runs"
@@ -22,18 +22,8 @@ TODAY_RUN = RUNS_ROOT / f"bond_{datetime.now():%Y_%m_%d}"
 MODULES = list(GUI_MODULES)
 MODULE_KEYS = [item[0] for item in MODULES]
 LABELS = {key: title for key, title, _ in MODULES}
-DEPENDENCIES = {
-    "cashflow": ["market_search"], "news_search": ["market_search"],
-    "news": ["market_search", "news_search"], "liquidity": ["market_search"],
-    "ofz_spread": ["market_search"], "analysis": ["market_search", "cashflow", "news", "liquidity", "ofz_spread"],
-    "deep_analysis": ["analysis"], "credit": ["deep_analysis"], "decision": [],
-}
-RESULT_FILES = {
-    "market_search": "bond_search_*.xlsx", "cashflow": "bond_cashflow_*.xlsx", "news_search": "news/**/*",
-    "news": "bond_news_*.xlsx", "liquidity": "bond_purchase_volume_*.xlsx", "ofz_spread": "bond_ofz_spread_*.xlsx",
-    "analysis": "bond_analysis_*.xlsx", "deep_analysis": "bond_deep_analysis_*.xlsx",
-    "credit": "bond_credit_analysis_*.xlsx", "decision": "bond_decisions_*.xlsx",
-}
+DEPENDENCIES = {key: list(value) for key, value in MODULE_DEPENDENCIES.items()}
+RESULT_FILES = {key: value for key, value in STAGE_RESULT_FILES.items() if value is not None}
 
 COMPARE_METRICS = {
     "Доходность, %": "market.yield",
