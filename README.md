@@ -2,6 +2,20 @@
 
 Этот репозиторий содержит Python-скрипты, которые помогают частным инвесторам находить ликвидные облигации, анализировать денежные потоки и отслеживать новости эмитентов. 
 
+> **Текущая структура проекта:** в корне оставлены только три рабочих entrypoint-а: `run_gui.py`, `run_pipeline.py` и `daily_runner.py`. Активный код разложен по `app/core`, `app/stages`, `app/portfolio`, `app/gui` и `src/`. Старые версии находятся в `archive/legacy`. Подробно: [`docs/PROJECT_STRUCTURE.md`](docs/PROJECT_STRUCTURE.md).
+
+Быстрый запуск GUI:
+
+```powershell
+.\.venv\Scripts\python.exe .\run_gui.py
+```
+
+Полный анализ без GUI:
+
+```powershell
+.\.venv\Scripts\python.exe .\run_pipeline.py --from-stage 1 --to-stage 10 --config .\configs\gui_active.json
+```
+
 Несмотря на обилие публичных сервисов для поиска облигаций, данное решение выделяется тем, что это open source решение, которое:
 1. Формирует краткий список привлекательных вариантов, доступных для покупки прямо сейчас.
 2. Проводит анализ денежных потоков.
