@@ -73,7 +73,7 @@ def main() -> None:
 
     if args.mode == "full":
         command = [
-            python, str(root / "app" / "cli" / "pipeline.py"),
+            python, str(root / "bondlab.py"), "pipeline",
             "--from-stage", "1",
             "--to-stage", "10",
             "--run-dir", str(run_dir),
@@ -87,7 +87,7 @@ def main() -> None:
         run_dir.mkdir(parents=True, exist_ok=True)
         if not args.skip_portfolio_refresh:
             _run([
-                python, str(root / "app" / "portfolio" / "portfolio_daily_refresh.py"),
+                python, "-m", "app.portfolio.portfolio_daily_refresh",
                 "--name", args.portfolio,
                 "--run-dir", str(run_dir),
                 "--portfolio-dir", str(portfolio_dir),
@@ -95,7 +95,7 @@ def main() -> None:
             ], root)
 
         _run([
-            python, str(root / "app" / "portfolio" / "portfolio_monitor.py"), "daily",
+            python, "-m", "app.portfolio.portfolio_monitor", "daily",
             "--name", args.portfolio,
             "--run-dir", str(run_dir),
             "--portfolio-dir", str(portfolio_dir),
@@ -104,7 +104,7 @@ def main() -> None:
         ], root)
 
     _run([
-        python, str(root / "app" / "portfolio" / "daily_actions.py"),
+        python, "-m", "app.portfolio.daily_actions",
         "--name", args.portfolio,
         "--run-dir", str(run_dir),
         "--portfolio-dir", str(portfolio_dir),
