@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 import time
 from pathlib import Path
 
@@ -19,8 +18,6 @@ import pandas as pd
 import requests
 
 ROOT = Path(__file__).resolve().parents[2]
-SRC = ROOT / "src"
-sys.path.insert(0, str(SRC))
 
 from moex_bond_search_and_analysis.http_client import browser_session, user_agent
 from moex_bond_search_and_analysis.logger import like_print_log
