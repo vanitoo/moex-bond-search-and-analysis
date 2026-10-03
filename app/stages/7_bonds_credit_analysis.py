@@ -13,18 +13,10 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
-
-ROOT = Path(__file__).resolve().parents[2]
-CORE = ROOT / "app" / "core"
-SRC = ROOT / "src"
-for _path in (str(CORE), str(SRC), str(ROOT)):
-    if _path not in sys.path:
-        sys.path.insert(0, _path)
 
 from moex_bond_search_and_analysis.ratings import enrich_issuer_identifiers
 from moex_bond_search_and_analysis.financials import (
@@ -40,7 +32,6 @@ from moex_bond_search_and_analysis.cbr_banks import (
 )
 from app.core.credit_engine import (
     CreditResult,
-    RATING_ORDER,
     RATING_POINTS,
     best_match,
     build_analysis,
