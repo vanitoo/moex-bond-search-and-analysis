@@ -136,7 +136,8 @@ def main() -> None:
             print(f"\nЭтап {number}: {script_name} — ОТКЛЮЧЁН конфигурацией")
             record_disabled(run_dir, spec, config)
             continue
-        command = [sys.executable, str(project_root / "app" / "stages" / script_name)]
+        stage_module = f"app.stages.{Path(script_name).stem}"
+        command = [sys.executable, "-m", stage_module]
         command += stage_arguments(script_name, args.impact_share, project_root, config, config_path,
                                    refresh_ratings=args.refresh_ratings,
                                    ratings_cache_hours=args.ratings_cache_hours)
