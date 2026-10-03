@@ -1,18 +1,11 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-CORE_ROOT = PROJECT_ROOT / "app" / "core"
-SRC_ROOT = PROJECT_ROOT / "src"
-for _path in (str(CORE_ROOT), str(SRC_ROOT), str(PROJECT_ROOT)):
-    if _path not in sys.path:
-        sys.path.insert(0, _path)
 
 from app.core.pipeline_common import latest, safe_float
 
