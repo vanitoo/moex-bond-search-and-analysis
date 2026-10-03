@@ -6,6 +6,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from app.core.project_paths import PROJECT_ROOT
 from app.core.run_paths import latest_analysis_run
 from app.core.runtime_env import build_subprocess_env
 
@@ -51,7 +52,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    root = Path(__file__).resolve().parents[2]
+    root = PROJECT_ROOT
     python = sys.executable
     baseline_kind = "полный анализ"
     if args.run_dir:
