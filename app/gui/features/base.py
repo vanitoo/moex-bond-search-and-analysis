@@ -14,13 +14,11 @@ import streamlit.components.v1 as components
 from app.gui.selection_profiles_ui import search_criteria_editor as render_search_criteria_editor
 
 from app.core.master_dataset import build_master_dataset
+from app.core.project_paths import DEFAULT_CONFIG, PROJECT_ROOT, RUNS_ROOT
 from app.core.value_utils import deep_get
 from app.core.runtime_env import build_subprocess_env
 from app.core.stage_registry import GUI_MODULES, MODULE_DEPENDENCIES, RESULT_FILES as STAGE_RESULT_FILES
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-RUNS_ROOT = PROJECT_ROOT / "runs"
-DEFAULT_CONFIG = PROJECT_ROOT / "configs" / "balanced.json"
 TODAY_RUN = RUNS_ROOT / f"bond_{datetime.now():%Y_%m_%d}"
 
 MODULES = list(GUI_MODULES)
