@@ -8,10 +8,6 @@ from datetime import datetime
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-SRC_ROOT = PROJECT_ROOT / "src"
-for _path in (str(PROJECT_ROOT), str(SRC_ROOT)):
-    if _path not in sys.path:
-        sys.path.insert(0, _path)
 
 from app.core.master_dataset import build_master_dataset
 from app.core.runtime_env import build_subprocess_env
@@ -54,7 +50,7 @@ def resolve_run_dir(project_root: Path, requested: str | None, from_stage: int) 
 
 
 def run_portfolio_monitor(project_root: Path, run_dir: Path, portfolio_name: str) -> None:
-    command = [sys.executable, str(project_root / "app" / "portfolio" / "portfolio_monitor.py"), "daily", "--name", portfolio_name,
+    command = [sys.executable, "-m", "app.portfolio.portfolio_monitor", "daily", "--name", portfolio_name,
                "--run-dir", str(run_dir), "--portfolio-dir", str(project_root / "data" / "virtual_portfolios"),
                "--history-dir", str(project_root / "data" / "portfolio_monitor_history"),
                "--report-dir", str(project_root / "reports")]
