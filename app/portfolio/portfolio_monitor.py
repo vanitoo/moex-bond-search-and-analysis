@@ -11,7 +11,6 @@ from urllib.parse import quote
 
 import pandas as pd
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
 import requests
 
 from app.core.pipeline_common import latest, safe_float
