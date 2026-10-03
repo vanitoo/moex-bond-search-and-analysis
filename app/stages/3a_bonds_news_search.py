@@ -17,8 +17,7 @@ import emoji
 import pandas as pd
 import requests
 
-ROOT = Path(__file__).resolve().parents[2]
-
+from app.core.project_paths import PROJECT_ROOT
 from moex_bond_search_and_analysis.http_client import browser_session, user_agent
 from moex_bond_search_and_analysis.logger import like_print_log
 from moex_bond_search_and_analysis.news import write_to_file
