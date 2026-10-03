@@ -15,13 +15,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 import requests
 
 from app.core.pipeline_common import latest, safe_float
+from app.core.rating_utils import normalize_rating, rating_drop
 from moex_bond_search_and_analysis.rating_signal import build_rating_signal, load_rating_events
 
 MOEX = "https://iss.moex.com/iss"
-RATING_ORDER = [
-    "D", "C", "CC", "CCC", "B-", "B", "B+", "BB-", "BB", "BB+",
-    "BBB-", "BBB", "BBB+", "A-", "A", "A+", "AA-", "AA", "AA+", "AAA",
-]
 HARD_SELL_DECISIONS = {"Не покупать"}
 REVIEW_DECISIONS = {"Недостаточно данных", "Рассматривать", "Требуется ручная проверка"}
 ACTION_SEVERITY = {
@@ -44,21 +41,6 @@ def normalize(value: Any) -> str:
     if value is None or pd.isna(value):
         return ""
     return re.sub(r"\s+", " ", str(value).strip().lower().replace("ё", "е"))
-
-
-def normalize_rating(value: Any) -> str:
-    raw = str(value or "").upper().replace("(RU)", "").replace("RU", "")
-    text = re.sub(r"[^A-Z+\-]", "", raw)
-    for item in sorted(RATING_ORDER, key=len, reverse=True):
-        if item in text:
-            return item
-    return ""
-
-
-def rating_drop(previous: str, current: str) -> int:
-    if previous not in RATING_ORDER or current not in RATING_ORDER:
-        return 0
-    return max(0, RATING_ORDER.index(previous) - RATING_ORDER.index(current))
 
 
 def safe_name(value: str) -> str:
