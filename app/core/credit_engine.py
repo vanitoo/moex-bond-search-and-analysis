@@ -8,6 +8,7 @@ from typing import Any
 
 import pandas as pd
 
+from app.core.rating_utils import RATING_ORDER, normalize_rating, rating_direction
 from moex_bond_search_and_analysis.cbr_banks import score_bank_metrics
 from moex_bond_search_and_analysis.issuer_credit_model import IssuerCreditModel, classify_issuer
 
@@ -21,10 +22,6 @@ RATING_POINTS = {
     "CCC": 0, "CC": 0, "C": 0, "D": 0,
 }
 
-RATING_ORDER = [
-    "D", "C", "CC", "CCC", "B-", "B", "B+", "BB-", "BB", "BB+",
-    "BBB-", "BBB", "BBB+", "A-", "A", "A+", "AA-", "AA", "AA+", "AAA",
-]
 
 
 @dataclass
