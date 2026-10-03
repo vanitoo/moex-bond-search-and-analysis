@@ -6,8 +6,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-
+from app.core.project_paths import PROJECT_ROOT
 from moex_bond_search_and_analysis.cli import start
 from moex_bond_search_and_analysis.schemas import SearchByCriteriaConditions
 
