@@ -1,6 +1,6 @@
 import pandas as pd
 
-from credit_sources import classify_population
+from app.core.credit_sources import classify_population
 
 
 def test_classify_population_splits_corporates_and_banks():
