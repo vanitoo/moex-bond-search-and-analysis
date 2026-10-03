@@ -4,13 +4,11 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-sys.path.append(str(PROJECT_ROOT / "src"))
 
-from cli import start
+from moex_bond_search_and_analysis.cli import start
 from moex_bond_search_and_analysis.schemas import SearchByCriteriaConditions
 
 
