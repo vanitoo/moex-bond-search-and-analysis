@@ -56,6 +56,9 @@ app/
     pipeline_common.py
     run_paths.py         # поиск/создание runs
     runtime_env.py       # единый PYTHONPATH/env для subprocess
+    project_paths.py      # единые пути проекта: runs/data/reports/configs
+    rating_utils.py       # единая шкала и нормализация рейтингов
+    search_contract.py    # контракт колонок V1/V2 рыночного поиска
     master_dataset.py
     credit_engine.py     # чистая логика кредитного скоринга
     credit_sources.py    # рейтинги / ГИР БО / банковские нормативы
@@ -128,3 +131,36 @@ Legacy:
 - Состояние модулей, запуск pipeline и кнопка копирования лога теперь находятся в общем GUI runtime (`features/base.py`).
 - Кнопка обновления риск-мониторинга использует единый entrypoint `bondlab.py monitor`, а не удалённый `daily_runner.py`.
 
+
+## Границы пакетов после четвёртого рефакторинга
+
+Рабочий код больше не должен полагаться на внутренние каталоги как на отдельные import-root.
+
+Разрешённые корни импорта:
+- корень репозитория — для пакета `app.*`;
+- `src/` — для пакета `moex_bond_search_and_analysis.*`.
+
+Поэтому рабочие импорты имеют вид `app.core.*`, `app.portfolio.*`, `app.gui.*` или
+`moex_bond_search_and_analysis.*`. Импорты вида `from master_dataset import ...`,
+`from portfolio_store import ...` и аналогичные считаются ошибкой архитектуры.
+
+`sys.path.insert/append` удалён из активного runtime. Подпроцессы получают только
+необходимые import-root через `app/core/runtime_env.py`, а этапы pipeline запускаются
+как package modules (`python -m app.stages.<stage>`).
+
+Pytest использует те же границы:
+
+```toml
+pythonpath = [".", "src"]
+```
+
+Это специально не даёт тестам скрывать неправильные импорты. Правило дополнительно
+защищает `tests/test_import_boundaries.py`.
+
+Общие правила, которые теперь имеют один источник правды:
+- пути проекта — `app/core/project_paths.py`;
+- шкала/нормализация кредитных рейтингов — `app/core/rating_utils.py`;
+- совместимость колонок V1/V2 поиска — `app/core/search_contract.py`.
+
+Скрипт `src/cli.py` оставлен только как compatibility shim. Рабочая реализация находится
+в `moex_bond_search_and_analysis.cli`.
