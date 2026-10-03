@@ -4,11 +4,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+from app.core.project_paths import PROJECT_ROOT
 from app.core.runtime_env import build_subprocess_env
 
 
 def main() -> None:
-    root = Path(__file__).resolve().parents[2]
+    root = PROJECT_ROOT
     app = root / "app" / "gui" / "gui_app.py"
     command = [sys.executable, "-m", "streamlit", "run", str(app)]
     process = subprocess.Popen(command, cwd=root, env=build_subprocess_env(root))
