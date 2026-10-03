@@ -72,22 +72,6 @@ def fmt(value: Any, digits: int = 2) -> str:
     return f"{number:,.{digits}f}".replace(",", " ").replace(".", ",")
 
 
-def normalize_rating(value: Any) -> str:
-    text = str(value or "").upper().strip()
-    text = text.replace("RU", "").replace("(RU)", "")
-    text = re.sub(r"[^A-Z+\-]", "", text)
-    for rating in sorted(RATING_POINTS, key=len, reverse=True):
-        if rating in text:
-            return rating
-    return ""
-
-
-def rating_direction(current: str, previous: str) -> int:
-    if current not in RATING_ORDER or previous not in RATING_ORDER:
-        return 0
-    return RATING_ORDER.index(current) - RATING_ORDER.index(previous)
-
-
 def row_match_score(source: pd.Series, candidate: pd.Series) -> int:
     secid = normalize(source.get("Код ценной бумаги"))
     issuer = normalize(source.get("Полное наименование"))
