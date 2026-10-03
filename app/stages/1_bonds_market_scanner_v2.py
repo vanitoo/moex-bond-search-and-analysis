@@ -3,8 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-
+from app.core.project_paths import PROJECT_ROOT
 from moex_bond_search_and_analysis.market_scanner_v2 import ScannerConfig, run_scan
 from moex_bond_search_and_analysis.market_scanner_v2.models import DEFAULT_CACHE_HOURS, DEFAULT_WORKERS
 
