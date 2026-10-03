@@ -2,7 +2,7 @@ from datetime import date
 
 import pandas as pd
 
-from credit_engine import best_match, evaluate
+from app.core.credit_engine import best_match, evaluate
 from moex_bond_search_and_analysis.issuer_credit_model import CORPORATE
 
 
