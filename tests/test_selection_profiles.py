@@ -1,4 +1,4 @@
-from selection_profiles import (
+from app.core.selection_profiles import (
     SELECTION_PROFILES,
     apply_selection_profile,
     matching_profile,
