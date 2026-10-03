@@ -1,4 +1,4 @@
-from portfolio_plan import apply_allocation_plan
+from app.portfolio.portfolio_plan import apply_allocation_plan
 
 
 def test_apply_plan_adds_new_position():
