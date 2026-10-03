@@ -1,4 +1,4 @@
-from portfolio_impact import simulate_purchase
+from app.portfolio.portfolio_impact import simulate_purchase
 
 
 def test_purchase_impact_changes_weights_and_yield():
