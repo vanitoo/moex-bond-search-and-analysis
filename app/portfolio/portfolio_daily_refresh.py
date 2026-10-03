@@ -10,8 +10,9 @@ from typing import Any
 
 import pandas as pd
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
 import requests
+
+from app.core.project_paths import PROJECT_ROOT
 
 from app.core.pipeline_common import latest, safe_float
 from app.core.runtime_env import build_subprocess_env
