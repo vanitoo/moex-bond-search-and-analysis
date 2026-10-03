@@ -1,4 +1,4 @@
-from stage_registry import (
+from app.core.stage_registry import (
     BY_SCRIPT,
     GUI_MODULES,
     MODULE_DEPENDENCIES,
