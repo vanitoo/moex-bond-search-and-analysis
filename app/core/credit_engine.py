@@ -8,7 +8,7 @@ from typing import Any
 
 import pandas as pd
 
-from app.core.rating_utils import RATING_ORDER, normalize_rating, rating_direction
+from app.core.rating_utils import normalize_rating, rating_direction
 from moex_bond_search_and_analysis.cbr_banks import score_bank_metrics
 from moex_bond_search_and_analysis.issuer_credit_model import IssuerCreditModel, classify_issuer
 
