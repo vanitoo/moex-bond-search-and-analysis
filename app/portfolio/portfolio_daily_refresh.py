@@ -246,7 +246,7 @@ def main() -> None:
             pass
 
     news_search_cmd = [
-        sys.executable, str(root / "app" / "stages" / "3a_bonds_news_search.py"),
+        sys.executable, "-m", "app.stages.3a_bonds_news_search",
         "--input", str(portfolio_input),
         "--providers", providers,
         "--proxy-env", proxy_env,
@@ -258,7 +258,7 @@ def main() -> None:
 
     news_output = run_dir / f"bond_news_daily_{stamp}.xlsx"
     _run([
-        sys.executable, str(root / "app" / "stages" / "3b_bonds_news.py"),
+        sys.executable, "-m", "app.stages.3b_bonds_news",
         "--input", str(portfolio_input),
         "--news-dir", str(run_dir),
         "--output", str(news_output),
@@ -267,7 +267,7 @@ def main() -> None:
     spread_output = run_dir / f"bond_ofz_spread_daily_{stamp}.xlsx"
     try:
         _run([
-            sys.executable, str(root / "app" / "stages" / "4c_bonds_ofz_spread.py"),
+            sys.executable, "-m", "app.stages.4c_bonds_ofz_spread",
             "--input", str(portfolio_input),
             "--output", str(spread_output),
         ], run_dir)
