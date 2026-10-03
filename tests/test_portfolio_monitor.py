@@ -1,13 +1,7 @@
-import importlib.util
 from datetime import datetime
-from pathlib import Path
 
 
-MODULE_PATH = Path(__file__).resolve().parents[1] / "app" / "portfolio_monitor.py"
-spec = importlib.util.spec_from_file_location("portfolio_monitor", MODULE_PATH)
-monitor = importlib.util.module_from_spec(spec)
-assert spec.loader is not None
-spec.loader.exec_module(monitor)
+from app.portfolio import portfolio_monitor as monitor
 
 
 def test_hard_stop_means_sell():
