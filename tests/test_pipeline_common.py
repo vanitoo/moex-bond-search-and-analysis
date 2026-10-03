@@ -1,6 +1,6 @@
 import pandas as pd
 
-from pipeline_common import merge_by_secid
+from app.core.pipeline_common import merge_by_secid
 
 
 def test_merge_by_secid_keeps_existing_overlapping_columns_and_adds_new_fields():
