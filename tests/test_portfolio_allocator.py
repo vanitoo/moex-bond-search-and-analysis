@@ -1,4 +1,4 @@
-from portfolio_allocator import allocate_budget
+from app.portfolio.portfolio_allocator import allocate_budget
 
 
 def bond(secid: str, score: float, price: float = 100.0, issuer: str | None = None, risk_rating: str = "A"):
