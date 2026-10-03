@@ -1,25 +1,11 @@
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 from typing import Any
 
+from app.core.rating_utils import RATING_ORDER, normalize_rating
 from app.core.value_utils import deep_get, safe_float
-
-RATING_ORDER = [
-    "D", "C", "CC", "CCC", "B-", "B", "B+", "BB-", "BB", "BB+",
-    "BBB-", "BBB", "BBB+", "A-", "A", "A+", "AA-", "AA", "AA+", "AAA",
-]
-
-
-def normalize_rating(value: Any) -> str:
-    raw = str(value or "").upper().replace("(RU)", "").replace("RU", "")
-    text = re.sub(r"[^A-Z+\-]", "", raw)
-    for item in sorted(RATING_ORDER, key=len, reverse=True):
-        if item in text:
-            return item
-    return ""
 
 
 def infer_issuer(bond: dict[str, Any], position: dict[str, Any] | None = None) -> str:
