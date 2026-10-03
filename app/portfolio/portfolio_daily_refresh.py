@@ -220,7 +220,6 @@ def main() -> None:
     parser.add_argument("--config", default="configs/gui_active.json")
     args = parser.parse_args()
 
-    root = Path(__file__).resolve().parent.parent
     run_dir = Path(args.run_dir).expanduser().resolve()
     portfolio_dir = Path(args.portfolio_dir).expanduser().resolve()
     config_path = Path(args.config).expanduser().resolve()
