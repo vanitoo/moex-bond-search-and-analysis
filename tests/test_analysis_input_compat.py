@@ -1,14 +1,6 @@
-import importlib.util
-from pathlib import Path
-
 import pandas as pd
 
-
-MODULE_PATH = Path(__file__).resolve().parents[1] / "app" / "stages" / "5_bonds_analysis.py"
-spec = importlib.util.spec_from_file_location("bonds_analysis", MODULE_PATH)
-analysis = importlib.util.module_from_spec(spec)
-assert spec.loader is not None
-spec.loader.exec_module(analysis)
+from app.core.search_contract import SEARCH_REQUIRED_COLUMNS, normalize_search_columns
 
 
 def test_analysis_normalizes_v2_search_aliases():
@@ -21,7 +13,7 @@ def test_analysis_normalizes_v2_search_aliases():
         "Доходность": 18.0,
         "Дюрация, месяцев": 12.0,
     }])
-    normalized = analysis.normalize_search_columns(frame)
+    normalized = normalize_search_columns(frame)
     assert normalized.loc[0, "Нужна квалификация?"] == "НЕТ"
     assert normalized.loc[0, "Объем сделок с 15 дней, шт."] == 70000
-    assert not analysis.REQUIRED.difference(normalized.columns)
+    assert not SEARCH_REQUIRED_COLUMNS.difference(normalized.columns)
