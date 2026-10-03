@@ -7,9 +7,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-
 from app.core.master_dataset import build_master_dataset
+from app.core.project_paths import PROJECT_ROOT
 from app.core.runtime_env import build_subprocess_env
 from app.core.run_paths import latest_pipeline_run, new_run_dir
 from app.core.stage_arguments import (
