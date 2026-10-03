@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from portfolio_daily_refresh import overlay_fresh_news
+from app.portfolio.portfolio_daily_refresh import overlay_fresh_news
 
 
 def _write_decisions(path: Path) -> None:
