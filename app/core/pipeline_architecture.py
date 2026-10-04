@@ -7,27 +7,9 @@ from typing import Any
 
 import pandas as pd
 
+from app.core.configuration import is_enabled, load_config, module_config
 from app.core.pipeline_common import clean_secid_rows, latest, normalize, safe_float
-
 from app.core.stage_registry import BY_SCRIPT, MODULES, ModuleSpec
-
-
-def load_config(path: Path | None) -> dict[str, Any]:
-    if path is None:
-        path = Path(__file__).resolve().parents[2] / "configs" / "balanced.json"
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    payload.setdefault("strategy", path.stem)
-    payload.setdefault("modules", {})
-    return payload
-
-
-def module_config(config: dict[str, Any], key: str) -> dict[str, Any]:
-    value = config.get("modules", {}).get(key, {})
-    return value if isinstance(value, dict) else {}
-
-
-def is_enabled(config: dict[str, Any], key: str) -> bool:
-    return bool(module_config(config, key).get("enabled", True))
 
 
 def decisions_dir(run_dir: Path) -> Path:
