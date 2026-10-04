@@ -10,15 +10,17 @@ CONFIG = {"modules": {"credit": {}}}
 
 def test_stage_range_covers_every_configured_stage():
     assert run_pipeline.FIRST_STAGE == 1
-    assert run_pipeline.LAST_STAGE == len(run_pipeline.STAGES)
-    assert run_pipeline.STAGES[run_pipeline.LAST_STAGE - 1] == "8_bonds_decision.py"
+    assert run_pipeline.LAST_STAGE == 10
+    assert run_pipeline.PIPELINE_STAGES[0].script == "1_bonds_search_by_criteria.py"
+    assert run_pipeline.PIPELINE_STAGES[-1].script == "8_bonds_decision.py"
 
 
 def test_market_credit_and_ofz_stage_positions():
-    assert run_pipeline.STAGES.index("4b_bonds_purchase_volume.py") + 1 == 5
-    assert run_pipeline.STAGES.index("4c_bonds_ofz_spread.py") + 1 == 6
-    assert run_pipeline.STAGES.index("5_bonds_analysis.py") + 1 == 7
-    assert run_pipeline.STAGES.index("7_bonds_credit_analysis.py") + 1 == 9
+    by_script = {stage.script: stage.number for stage in run_pipeline.PIPELINE_STAGES}
+    assert by_script["4b_bonds_purchase_volume.py"] == 5
+    assert by_script["4c_bonds_ofz_spread.py"] == 6
+    assert by_script["5_bonds_analysis.py"] == 7
+    assert by_script["7_bonds_credit_analysis.py"] == 9
 
 
 def test_stage_specific_arguments():
