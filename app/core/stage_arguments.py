@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from pipeline_architecture import module_config
-from stage_registry import BY_SCRIPT, resolve_market_script
+from app.core.pipeline_architecture import module_config
+from app.core.stage_registry import BY_SCRIPT, resolve_market_script
 
 
 DEFAULT_RATINGS_CACHE_HOURS = 24

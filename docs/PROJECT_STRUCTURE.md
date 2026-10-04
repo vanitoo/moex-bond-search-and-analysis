@@ -56,6 +56,9 @@ app/
     pipeline_common.py
     run_paths.py         # поиск/создание runs
     runtime_env.py       # единый PYTHONPATH/env для subprocess
+    project_paths.py      # единые пути проекта: runs/data/reports/configs
+    rating_utils.py       # единая шкала и нормализация рейтингов
+    search_contract.py    # контракт колонок V1/V2 рыночного поиска
     master_dataset.py
     credit_engine.py     # чистая логика кредитного скоринга
     credit_sources.py    # рейтинги / ГИР БО / банковские нормативы
@@ -119,3 +122,56 @@ Legacy:
 - `app/cli/pipeline.py` — только оркестрация запуска этапов и CLI-параметров.
 
 Новые правила: не дублировать `STAGES`, описания этапов и `ModuleSpec` в разных файлах; новые scoring-правила сначала добавлять в engine и покрывать unit-тестом, а не писать непосредственно в CLI-скрипте.
+## GUI после третьего рефакторинга
+
+- `app/gui/features/current.py` — единственная композиция Streamlit-приложения и единственный `main()` в `features/`.
+- Остальные `*_view.py` и `portfolio_workspace.py` — только render-функции; они больше не запускают друг друга.
+- Удалены runtime-monkeypatch цепочки между `tabs`, `buy_plan`, `portfolio_workspace`, `module_state` и `runner_view`.
+- Исторические alias-имена `v4`, `v10`, `_v14` и т. п. запрещены структурным тестом `tests/test_gui_structure.py`.
+- Состояние модулей, запуск pipeline и кнопка копирования лога теперь находятся в общем GUI runtime (`features/base.py`).
+- Кнопка обновления риск-мониторинга использует единый entrypoint `bondlab.py monitor`, а не удалённый `daily_runner.py`.
+
+
+## Границы пакетов после четвёртого рефакторинга
+
+Рабочий код больше не должен полагаться на внутренние каталоги как на отдельные import-root.
+
+Разрешённые корни импорта:
+- корень репозитория — для пакета `app.*`;
+- `src/` — для пакета `moex_bond_search_and_analysis.*`.
+
+Поэтому рабочие импорты имеют вид `app.core.*`, `app.portfolio.*`, `app.gui.*` или
+`moex_bond_search_and_analysis.*`. Импорты вида `from master_dataset import ...`,
+`from portfolio_store import ...` и аналогичные считаются ошибкой архитектуры.
+
+`sys.path.insert/append` удалён из активного runtime. Подпроцессы получают только
+необходимые import-root через `app/core/runtime_env.py`, а этапы pipeline запускаются
+как package modules (`python -m app.stages.<stage>`).
+
+Pytest использует те же границы:
+
+```toml
+pythonpath = [".", "src"]
+```
+
+Это специально не даёт тестам скрывать неправильные импорты. Правило дополнительно
+защищает `tests/test_import_boundaries.py`.
+
+Общие правила, которые теперь имеют один источник правды:
+- пути проекта — `app/core/project_paths.py`;
+- шкала/нормализация кредитных рейтингов — `app/core/rating_utils.py`;
+- совместимость колонок V1/V2 поиска — `app/core/search_contract.py`.
+
+Скрипт `src/cli.py` оставлен только как compatibility shim. Рабочая реализация находится
+в `moex_bond_search_and_analysis.cli`.
+
+
+## Оркестрация после пятого рефакторинга
+
+- `app/core/process_runner.py` — единственная общая точка для запуска дочерних Python-процессов и package modules с правильным runtime environment.
+- `app/cli/pipeline.py` больше не содержит собственный список `STAGES`: порядок и номера этапов берутся напрямую из `app/core/stage_registry.py`.
+- Runtime module этапа строится централизованно через `runtime_module_for_script()`; pipeline больше не собирает import-path вручную.
+- `app/cli/daily.py`, `app/portfolio/portfolio_daily_refresh.py` и GUI используют общий command/process builder вместо дублирования `sys.executable`, `python -m` и `PYTHONPATH`.
+- GUI и daily CLI используют константы из `app/core/project_paths.py` для конфигов, runs, reports и portfolio data вместо ручной сборки путей.
+
+Следующий рефакторинг: отделить configuration schema/defaults от Streamlit и CLI, чтобы GUI, pipeline и automation читали одну типизированную модель настроек без дублирования default-значений.

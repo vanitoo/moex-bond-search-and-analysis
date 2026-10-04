@@ -2,25 +2,20 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import subprocess
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-CORE_ROOT = PROJECT_ROOT / "app" / "core"
-SRC_ROOT = PROJECT_ROOT / "src"
-for _path in (str(CORE_ROOT), str(SRC_ROOT), str(PROJECT_ROOT)):
-    if _path not in sys.path:
-        sys.path.insert(0, _path)
 import requests
 
-from pipeline_common import latest, safe_float
-from portfolio_store import load_portfolio
+from app.core.process_runner import module_command, run_command
+from app.core.project_paths import GUI_CONFIG, PROJECT_ROOT, VIRTUAL_PORTFOLIOS_ROOT
+
+from app.core.pipeline_common import latest, safe_float
+from app.portfolio.portfolio_store import load_portfolio
 from moex_bond_search_and_analysis.rating_signal import build_rating_signal, load_rating_events
 
 MOEX = "https://iss.moex.com/iss"
@@ -28,13 +23,7 @@ MOEX = "https://iss.moex.com/iss"
 
 def _run(command: list[str], cwd: Path) -> None:
     print("\n> " + " ".join(command))
-    project_root = Path(__file__).resolve().parent.parent
-    env = os.environ.copy()
-    pythonpath = [str(project_root / "app"), str(project_root / "src"), str(project_root)]
-    if env.get("PYTHONPATH"):
-        pythonpath.append(env["PYTHONPATH"])
-    env["PYTHONPATH"] = os.pathsep.join(pythonpath)
-    subprocess.run(command, cwd=cwd, check=True, env=env)
+    run_command(command, cwd=cwd, project_root=PROJECT_ROOT)
 
 
 def _rows(payload: dict[str, Any], block: str) -> list[dict[str, Any]]:
@@ -221,11 +210,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Лёгкое ежедневное обновление только бумаг из портфеля")
     parser.add_argument("--name", required=True)
     parser.add_argument("--run-dir", required=True)
-    parser.add_argument("--portfolio-dir", default="data/virtual_portfolios")
-    parser.add_argument("--config", default="configs/gui_active.json")
+    parser.add_argument("--portfolio-dir", default=str(VIRTUAL_PORTFOLIOS_ROOT))
+    parser.add_argument("--config", default=str(GUI_CONFIG))
     args = parser.parse_args()
 
-    root = Path(__file__).resolve().parent.parent
     run_dir = Path(args.run_dir).expanduser().resolve()
     portfolio_dir = Path(args.portfolio_dir).expanduser().resolve()
     config_path = Path(args.config).expanduser().resolve()
@@ -251,32 +239,38 @@ def main() -> None:
         except (OSError, json.JSONDecodeError):
             pass
 
-    news_search_cmd = [
-        sys.executable, str(root / "app" / "stages" / "3a_bonds_news_search.py"),
-        "--input", str(portfolio_input),
-        "--providers", providers,
-        "--proxy-env", proxy_env,
-        "--delay", "0.25",
-    ]
+    news_search_cmd = module_command(
+        "app.stages.3a_bonds_news_search",
+        [
+            "--input", str(portfolio_input),
+            "--providers", providers,
+            "--proxy-env", proxy_env,
+            "--delay", "0.25",
+        ],
+    )
     if use_proxy:
         news_search_cmd.append("--use-proxy")
     _run(news_search_cmd, run_dir)
 
     news_output = run_dir / f"bond_news_daily_{stamp}.xlsx"
-    _run([
-        sys.executable, str(root / "app" / "stages" / "3b_bonds_news.py"),
-        "--input", str(portfolio_input),
-        "--news-dir", str(run_dir),
-        "--output", str(news_output),
-    ], run_dir)
+    _run(module_command(
+        "app.stages.3b_bonds_news",
+        [
+            "--input", str(portfolio_input),
+            "--news-dir", str(run_dir),
+            "--output", str(news_output),
+        ],
+    ), run_dir)
 
     spread_output = run_dir / f"bond_ofz_spread_daily_{stamp}.xlsx"
     try:
-        _run([
-            sys.executable, str(root / "app" / "stages" / "4c_bonds_ofz_spread.py"),
-            "--input", str(portfolio_input),
-            "--output", str(spread_output),
-        ], run_dir)
+        _run(module_command(
+            "app.stages.4c_bonds_ofz_spread",
+            [
+                "--input", str(portfolio_input),
+                "--output", str(spread_output),
+            ],
+        ), run_dir)
     except subprocess.CalledProcessError as exc:
         print(f"⚠️ Не удалось обновить спред к ОФЗ: {exc}. Мониторинг продолжится с последними доступными данными.")
 

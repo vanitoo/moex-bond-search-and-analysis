@@ -1,15 +1,16 @@
 from __future__ import annotations
 
 from datetime import date
+from collections.abc import Callable
 from typing import Any
 
 import pandas as pd
 import streamlit as st
 
-import base
-from portfolio_impact_view import render_portfolio_impact
-from portfolio_impact import infer_issuer, safe_float
-from portfolio_store import (
+from app.gui.features import base
+from app.gui.features.portfolio_impact_view import render_portfolio_impact
+from app.portfolio.portfolio_impact import infer_issuer, safe_float
+from app.portfolio.portfolio_store import (
     create_portfolio,
     delete_portfolio,
     list_portfolios,
@@ -230,7 +231,11 @@ def _candidate_selection(run_dir, by_secid: dict[str, dict[str, Any]]) -> list[s
     return current
 
 
-def render_candidates(run_dir) -> None:
+def render_candidates(
+    run_dir,
+    explanation_renderer: Callable[[dict[str, Any]], None] | None = None,
+) -> None:
+    renderer = explanation_renderer or base.render_bond_explanation
     st.subheader("Кандидаты к покупке")
     st.caption("Короткий список 2–10 бумаг, сравнение параметров и влияние покупки на портфель.")
     master = base.load_master(run_dir)
@@ -248,7 +253,7 @@ def render_candidates(run_dir) -> None:
             if any(base.deep_get(bond, path) is not None for bond in chosen)
         ]
         default_metrics = [name for name in base.DEFAULT_COMPARE_METRICS if name in available_metrics]
-        metrics = st.multiselect("Параметры сравнения", available_metrics, default=default_metrics or available_metrics[:5], key="candidate_metrics_v4")
+        metrics = st.multiselect("Параметры сравнения", available_metrics, default=default_metrics or available_metrics[:5], key="candidate_metrics")
 
         labels = {bond["secid"]: (bond.get("name") or bond["secid"]) for bond in chosen}
         compare_rows = []
@@ -265,7 +270,7 @@ def render_candidates(run_dir) -> None:
             leader, leader_score = max(scored, key=lambda pair: pair[1])
             st.info(f"По текущему скорингу лидирует **{base.bond_label(leader)}** — {leader_score:.0f} баллов.")
 
-        chart_metrics = st.multiselect("Графики", metrics, default=metrics[: min(3, len(metrics))], key="candidate_charts_v4")
+        chart_metrics = st.multiselect("Графики", metrics, default=metrics[: min(3, len(metrics))], key="candidate_charts")
         for metric in chart_metrics:
             values = []
             for bond in chosen:
@@ -283,44 +288,8 @@ def render_candidates(run_dir) -> None:
         st.markdown("### Почему такие оценки")
         for bond in chosen:
             with st.container(border=True):
-                base.render_bond_explanation(bond)
+                renderer(bond)
     else:
         st.info("Добавьте минимум две бумаги для сравнительной таблицы.")
 
     render_portfolio_impact(run_dir)
-
-
-def main() -> None:
-    st.set_page_config(page_title="MOEX Bond Lab", page_icon="📊", layout="wide")
-    st.title("📊 MOEX Bond Lab")
-    st.caption("Сканер → анализ → кандидаты → портфель → мониторинг.")
-    config = base.config_editor()
-    dirs = base.run_dirs()
-    choices = ["➕ Новый анализ на сегодня"] + [path.name for path in dirs]
-    default = choices.index(base.TODAY_RUN.name) if base.TODAY_RUN.name in choices else 0
-    selected = st.sidebar.selectbox("Анализ", choices, index=default)
-    if selected == "➕ Новый анализ на сегодня":
-        base.render_start_today(config)
-        return
-
-    run_dir = base.PROJECT_ROOT / selected
-    is_today = run_dir.name == base.TODAY_RUN.name
-    st.sidebar.success("Текущий день: модули можно обновлять") if is_today else st.sidebar.info("Архив: только просмотр")
-    tabs = st.tabs(["Обзор", "Облигации", "Кандидаты", "Портфель", "Модули и причины", "Запуск / обновление"])
-    with tabs[0]:
-        base.render_overview(run_dir)
-    with tabs[1]:
-        base.render_bonds(run_dir)
-    with tabs[2]:
-        render_candidates(run_dir)
-    with tabs[3]:
-        render_portfolio(run_dir)
-    with tabs[4]:
-        trace = base.trace_table(run_dir)
-        st.dataframe(trace, use_container_width=True, hide_index=True) if not trace.empty else st.info("Журнал пока отсутствует")
-    with tabs[5]:
-        base.render_rerun(run_dir, config) if is_today else st.info("Архив доступен только для просмотра")
-
-
-if __name__ == "__main__":
-    main()

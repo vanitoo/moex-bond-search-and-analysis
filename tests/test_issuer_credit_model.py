@@ -1,18 +1,7 @@
-import importlib.util
-import sys
-from pathlib import Path
-
 import pandas as pd
 
+from app.core.credit_engine import evaluate
 from moex_bond_search_and_analysis.issuer_credit_model import classify_issuer
-
-
-MODULE_PATH = Path(__file__).resolve().parents[1] / "app" / "stages" / "7_bonds_credit_analysis.py"
-spec = importlib.util.spec_from_file_location("credit_analysis_module", MODULE_PATH)
-credit = importlib.util.module_from_spec(spec)
-sys.modules[spec.name] = credit
-assert spec.loader is not None
-spec.loader.exec_module(credit)
 
 
 def _source(name: str) -> pd.Series:
@@ -47,7 +36,7 @@ def test_bank_classifier_does_not_misclassify_leasing_subsidiary():
 
 def test_noncorporate_model_does_not_require_corporate_financials():
     model = classify_issuer("Сбербанк ПАО 001Р")
-    result = credit.evaluate(_source("Сбербанк ПАО 001Р"), _rating(), None, model)
+    result = evaluate(_source("Сбербанк ПАО 001Р"), _rating(), None, model)
     assert "Финансовая отчётность" not in result.missing
     assert "Специализированные банковские показатели ЦБ РФ" in result.missing
     assert result.confidence == "Средняя"

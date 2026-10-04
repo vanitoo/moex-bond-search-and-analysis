@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from master_dataset import build_master_dataset
+from app.core.master_dataset import build_master_dataset
 
 
 def test_build_master_dataset_merges_modules(tmp_path: Path) -> None:

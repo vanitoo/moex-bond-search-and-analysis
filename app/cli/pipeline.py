@@ -3,32 +3,25 @@ from __future__ import annotations
 import argparse
 import shutil
 import subprocess
-import sys
 from datetime import datetime
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-APP_ROOT = PROJECT_ROOT / "app"
-APP_CORE = APP_ROOT / "core"
-APP_PORTFOLIO = APP_ROOT / "portfolio"
-SRC_ROOT = PROJECT_ROOT / "src"
-for _path in (str(APP_CORE), str(APP_PORTFOLIO), str(APP_ROOT), str(SRC_ROOT), str(PROJECT_ROOT)):
-    if _path not in sys.path:
-        sys.path.insert(0, _path)
-
-from master_dataset import build_master_dataset
-from runtime_env import build_subprocess_env
-from run_paths import latest_pipeline_run, new_run_dir
-from stage_arguments import (
+from app.core.master_dataset import build_master_dataset
+from app.core.project_paths import PROJECT_ROOT
+from app.core.process_runner import run_module
+from app.core.run_paths import latest_pipeline_run, new_run_dir
+from app.core.stage_arguments import (
     DEFAULT_RATINGS_CACHE_HOURS,
     actual_script,
-    market_search_arguments,
-    ratings_cache_is_fresh,
-    selected_market_script,
     stage_arguments,
 )
-from stage_registry import MODULE_DESCRIPTIONS, PIPELINE_STAGE_SCRIPTS
-from pipeline_architecture import (
+from app.core.stage_registry import (
+    MODULE_DESCRIPTIONS,
+    PIPELINE_STAGES,
+    PipelineStage,
+    runtime_module_for_script,
+)
+from app.core.pipeline_architecture import (
     BY_SCRIPT,
     append_event,
     collect_stage,
@@ -39,9 +32,8 @@ from pipeline_architecture import (
     write_summaries,
 )
 
-STAGES = list(PIPELINE_STAGE_SCRIPTS)
-FIRST_STAGE = 1
-LAST_STAGE = len(STAGES)
+FIRST_STAGE = PIPELINE_STAGES[0].number
+LAST_STAGE = PIPELINE_STAGES[-1].number
 
 def find_latest_run_dir(project_root: Path) -> Path | None:
     return latest_pipeline_run(project_root)
@@ -60,22 +52,38 @@ def resolve_run_dir(project_root: Path, requested: str | None, from_stage: int) 
 
 
 def run_portfolio_monitor(project_root: Path, run_dir: Path, portfolio_name: str) -> None:
-    command = [sys.executable, str(project_root / "app" / "portfolio" / "portfolio_monitor.py"), "daily", "--name", portfolio_name,
-               "--run-dir", str(run_dir), "--portfolio-dir", str(project_root / "data" / "virtual_portfolios"),
-               "--history-dir", str(project_root / "data" / "portfolio_monitor_history"),
-               "--report-dir", str(project_root / "reports")]
-    subprocess.run(command, check=True, cwd=project_root)
+    run_module(
+        "app.portfolio.portfolio_monitor",
+        [
+            "daily",
+            "--name", portfolio_name,
+            "--run-dir", str(run_dir),
+            "--portfolio-dir", str(project_root / "data" / "virtual_portfolios"),
+            "--history-dir", str(project_root / "data" / "portfolio_monitor_history"),
+            "--report-dir", str(project_root / "reports"),
+        ],
+        cwd=project_root,
+        project_root=project_root,
+    )
 
 
-def selected_stage_numbers(args: argparse.Namespace) -> list[int]:
+def selected_stages(args: argparse.Namespace) -> list[PipelineStage]:
     if not args.only_module:
-        return list(range(args.from_stage, args.to_stage + 1))
+        return [
+            stage
+            for stage in PIPELINE_STAGES
+            if args.from_stage <= stage.number <= args.to_stage
+        ]
+
     requested = set(args.only_module)
-    known = {BY_SCRIPT[name].key for name in STAGES}
+    known = {stage.key for stage in PIPELINE_STAGES}
     unknown = sorted(requested - known)
     if unknown:
-        raise SystemExit(f"Неизвестные модули: {', '.join(unknown)}. Доступны: {', '.join(sorted(known))}")
-    return [index for index, script in enumerate(STAGES, 1) if BY_SCRIPT[script].key in requested]
+        raise SystemExit(
+            f"Неизвестные модули: {', '.join(unknown)}. "
+            f"Доступны: {', '.join(sorted(known))}"
+        )
+    return [stage for stage in PIPELINE_STAGES if stage.key in requested]
 
 
 def record_stage_error(run_dir: Path, spec, config: dict, exc: subprocess.CalledProcessError) -> None:
@@ -116,10 +124,10 @@ def main() -> None:
     project_root = PROJECT_ROOT
     config_path = Path(args.config).expanduser().resolve() if args.config else None
     config = load_config(config_path)
-    numbers = selected_stage_numbers(args)
-    if not numbers:
+    stages = selected_stages(args)
+    if not stages:
         raise SystemExit("Не выбран ни один модуль")
-    run_dir = resolve_run_dir(project_root, args.run_dir, min(numbers))
+    run_dir = resolve_run_dir(project_root, args.run_dir, min(stage.number for stage in stages))
     run_dir.mkdir(parents=True, exist_ok=True)
 
     trace_dir = run_dir / "decisions"
@@ -133,20 +141,26 @@ def main() -> None:
         print("Точечный запуск модулей: " + ", ".join(args.only_module))
 
     soft_errors: list[str] = []
-    for number in numbers:
-        configured_name = STAGES[number - 1]
+    for stage in stages:
+        configured_name = stage.script
         script_name = actual_script(configured_name, config)
         spec = BY_SCRIPT[script_name]
         if not is_enabled(config, spec.key):
-            print(f"\nЭтап {number}: {script_name} — ОТКЛЮЧЁН конфигурацией")
+            print(f"\nЭтап {stage.number}: {script_name} — ОТКЛЮЧЁН конфигурацией")
             record_disabled(run_dir, spec, config)
             continue
-        command = [sys.executable, str(project_root / "app" / "stages" / script_name)]
-        command += stage_arguments(script_name, args.impact_share, project_root, config, config_path,
-                                   refresh_ratings=args.refresh_ratings,
-                                   ratings_cache_hours=args.ratings_cache_hours)
+        stage_module = runtime_module_for_script(script_name)
+        stage_args = stage_arguments(
+            script_name,
+            args.impact_share,
+            project_root,
+            config,
+            config_path,
+            refresh_ratings=args.refresh_ratings,
+            ratings_cache_hours=args.ratings_cache_hours,
+        )
         print("\n" + "=" * 72)
-        print(f"Этап {number}: {script_name}")
+        print(f"Этап {stage.number}: {script_name}")
         print(f"🔴 ЧТО ДЕЛАЕТ МОДУЛЬ: {MODULE_DESCRIPTIONS[script_name]}")
         if spec.key == "market_search":
             settings = module_config(config, "market_search")
@@ -161,8 +175,12 @@ def main() -> None:
         print(f"Рабочая папка: {run_dir}")
         print("=" * 72)
         try:
-            child_env = build_subprocess_env(project_root)
-            subprocess.run(command, check=True, cwd=run_dir, env=child_env)
+            run_module(
+                stage_module,
+                stage_args,
+                cwd=run_dir,
+                project_root=project_root,
+            )
         except subprocess.CalledProcessError as exc:
             record_stage_error(run_dir, spec, config, exc)
             if mode == "information":

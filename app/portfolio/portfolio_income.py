@@ -11,8 +11,8 @@ from urllib.parse import quote
 import pandas as pd
 import requests
 
-from pipeline_common import safe_float
-from portfolio_store import load_portfolio, safe_name
+from app.core.pipeline_common import safe_float
+from app.portfolio.portfolio_store import load_portfolio, safe_name
 
 MOEX = "https://iss.moex.com/iss"
 

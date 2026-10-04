@@ -8,8 +8,8 @@ from urllib.parse import quote
 
 import requests
 
-from pipeline_common import safe_float
-from portfolio_store import load_portfolio, save_portfolio, upsert_position
+from app.core.pipeline_common import safe_float
+from app.portfolio.portfolio_store import load_portfolio, save_portfolio, upsert_position
 
 MOEX = "https://iss.moex.com/iss"
 

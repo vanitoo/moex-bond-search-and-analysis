@@ -1,6 +1,6 @@
 import pandas as pd
 
-from portfolio_shortlist import annotate_decisions, build_shortlist
+from app.portfolio.portfolio_shortlist import annotate_decisions, build_shortlist
 
 
 def _row(secid, issuer, score, admitted="ДА", missing="—"):

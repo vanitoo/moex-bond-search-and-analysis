@@ -1,4 +1,4 @@
-from portfolio_recommendation import recommend_candidate
+from app.portfolio.portfolio_recommendation import recommend_candidate
 
 
 def bond(secid, *, score=80, rating="A", ytm=18, max_purchase=100000, status="Купить", risk_spread=300):

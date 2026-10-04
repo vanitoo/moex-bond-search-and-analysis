@@ -8,6 +8,7 @@ from typing import Any
 
 import pandas as pd
 
+from app.core.rating_utils import normalize_rating, rating_direction
 from moex_bond_search_and_analysis.cbr_banks import score_bank_metrics
 from moex_bond_search_and_analysis.issuer_credit_model import IssuerCreditModel, classify_issuer
 
@@ -21,10 +22,6 @@ RATING_POINTS = {
     "CCC": 0, "CC": 0, "C": 0, "D": 0,
 }
 
-RATING_ORDER = [
-    "D", "C", "CC", "CCC", "B-", "B", "B+", "BB-", "BB", "BB+",
-    "BBB-", "BBB", "BBB+", "A-", "A", "A+", "AA-", "AA", "AA+", "AAA",
-]
 
 
 @dataclass
@@ -73,22 +70,6 @@ def fmt(value: Any, digits: int = 2) -> str:
     if number is None:
         return "—"
     return f"{number:,.{digits}f}".replace(",", " ").replace(".", ",")
-
-
-def normalize_rating(value: Any) -> str:
-    text = str(value or "").upper().strip()
-    text = text.replace("RU", "").replace("(RU)", "")
-    text = re.sub(r"[^A-Z+\-]", "", text)
-    for rating in sorted(RATING_POINTS, key=len, reverse=True):
-        if rating in text:
-            return rating
-    return ""
-
-
-def rating_direction(current: str, previous: str) -> int:
-    if current not in RATING_ORDER or previous not in RATING_ORDER:
-        return 0
-    return RATING_ORDER.index(current) - RATING_ORDER.index(previous)
 
 
 def row_match_score(source: pd.Series, candidate: pd.Series) -> int:

@@ -7,7 +7,7 @@ from typing import Any
 
 import pandas as pd
 
-from credit_engine import fmt
+from app.core.credit_engine import fmt
 
 
 def write_excel(df: pd.DataFrame, output: Path, source: Path) -> None:

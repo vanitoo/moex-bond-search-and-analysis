@@ -1,24 +1,15 @@
 from __future__ import annotations
 
 import argparse
-import sys
 import time
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-APP_ROOT = PROJECT_ROOT / "app"
-CORE_ROOT = APP_ROOT / "core"
-PORTFOLIO_ROOT = APP_ROOT / "portfolio"
-SRC_ROOT = PROJECT_ROOT / "src"
-for _path in (str(CORE_ROOT), str(PORTFOLIO_ROOT), str(APP_ROOT), str(SRC_ROOT), str(PROJECT_ROOT)):
-    if _path not in sys.path:
-        sys.path.insert(0, _path)
 from urllib.parse import quote
 
 import pandas as pd
 import requests
 
-from pipeline_common import clean_secid_rows, dated_name, latest, safe_float
+from app.core.pipeline_common import clean_secid_rows, dated_name, latest, safe_float
 
 MOEX = "https://iss.moex.com/iss"
 

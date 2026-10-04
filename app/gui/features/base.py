@@ -9,14 +9,16 @@ from typing import Any
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
-from master_dataset import build_master_dataset
-from runtime_env import build_subprocess_env
-from stage_registry import GUI_MODULES, MODULE_DEPENDENCIES, RESULT_FILES as STAGE_RESULT_FILES
+from app.gui.selection_profiles_ui import search_criteria_editor as render_search_criteria_editor
 
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-RUNS_ROOT = PROJECT_ROOT / "runs"
-DEFAULT_CONFIG = PROJECT_ROOT / "configs" / "balanced.json"
+from app.core.master_dataset import build_master_dataset
+from app.core.process_runner import entrypoint_command, popen_command
+from app.core.project_paths import DEFAULT_CONFIG, GUI_CONFIG, PROJECT_ROOT, RUNS_ROOT
+from app.core.value_utils import deep_get
+from app.core.stage_registry import GUI_MODULES, MODULE_DEPENDENCIES, RESULT_FILES as STAGE_RESULT_FILES
+
 TODAY_RUN = RUNS_ROOT / f"bond_{datetime.now():%Y_%m_%d}"
 
 MODULES = list(GUI_MODULES)
@@ -84,55 +86,66 @@ def latest_file(run_dir: Path, pattern: str) -> Path | None:
     return max(files, key=lambda p: p.stat().st_mtime) if files else None
 
 
+def _latest_module_event(run_dir: Path, key: str) -> dict[str, Any] | None:
+    trace = run_dir / "decisions" / "module_results.jsonl"
+    if not trace.exists():
+        return None
+    latest: dict[str, Any] | None = None
+    for line in trace.read_text(encoding="utf-8", errors="ignore").splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if event.get("module") == key:
+            latest = event
+    return latest
+
+
 def module_state(run_dir: Path, key: str) -> dict[str, Any]:
     if not run_dir.exists():
         return {"status": "Нет результата", "updated": "—", "file": None}
+
     pattern = RESULT_FILES[key]
     files = [p for p in run_dir.glob(pattern) if p.is_file()] if "**" in pattern else []
     path = max(files, key=lambda p: p.stat().st_mtime) if files else latest_file(run_dir, pattern)
-    if path is None:
+    if path is not None:
+        return {
+            "status": "Готово",
+            "updated": datetime.fromtimestamp(path.stat().st_mtime).strftime("%d.%m.%Y %H:%M"),
+            "file": path,
+        }
+
+    event = _latest_module_event(run_dir, key)
+    if not event:
         return {"status": "Нет результата", "updated": "—", "file": None}
-    return {"status": "Готово", "updated": datetime.fromtimestamp(path.stat().st_mtime).strftime("%d.%m.%Y %H:%M"), "file": path}
+
+    status = str(event.get("status") or "")
+    mode = str(event.get("mode") or "information")
+    if status == "ERROR" and mode == "information":
+        timestamp = str(event.get("timestamp") or "")
+        try:
+            updated = datetime.fromisoformat(timestamp).strftime("%d.%m.%Y %H:%M")
+        except ValueError:
+            updated = "—"
+        return {
+            "status": "Источник недоступен",
+            "updated": updated,
+            "file": run_dir / "decisions" / "module_results.jsonl",
+            "degraded": True,
+            "reason": event.get("reason") or "Внешний источник данных недоступен",
+        }
+
+    return {"status": "Нет результата", "updated": "—", "file": None}
 
 
 def save_gui_config(config: dict[str, Any]) -> Path:
-    path = PROJECT_ROOT / "configs" / "gui_active.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
-    return path
-
-
-def search_criteria_editor(settings: dict[str, Any]) -> None:
-    st.markdown("**Общие критерии поиска для V1 и V2**")
-    left, right = st.columns(2)
-    with left:
-        settings["yield_more"] = st.number_input("Доходность ОТ, %", value=float(settings.get("yield_more", 15)), step=1.0)
-        settings["price_more"] = st.number_input("Цена ОТ, % от номинала", value=float(settings.get("price_more", 70)), step=1.0)
-        settings["duration_more"] = st.number_input("Дюрация ОТ, месяцев", value=float(settings.get("duration_more", 3)), step=1.0)
-        settings["volume_more"] = st.number_input("Минимальный объём каждого из 15 дней, шт.", min_value=0.0, value=float(settings.get("volume_more", 2000)), step=100.0)
-    with right:
-        settings["yield_less"] = st.number_input("Доходность ДО, %", value=float(settings.get("yield_less", 40)), step=1.0)
-        settings["price_less"] = st.number_input("Цена ДО, % от номинала", value=float(settings.get("price_less", 120)), step=1.0)
-        settings["duration_less"] = st.number_input("Дюрация ДО, месяцев", value=float(settings.get("duration_less", 18)), step=1.0)
-        settings["bond_volume_more"] = st.number_input("Совокупный объём за 15 дней, шт.", min_value=0.0, value=float(settings.get("bond_volume_more", 60000)), step=1000.0)
-    settings["require_known_coupons"] = st.checkbox(
-        "Только облигации с известными купонами до погашения",
-        value=bool(settings.get("require_known_coupons", True)),
-    )
-    errors = []
-    if settings["yield_more"] > settings["yield_less"]:
-        errors.append("Доходность ОТ больше доходности ДО")
-    if settings["price_more"] > settings["price_less"]:
-        errors.append("Цена ОТ больше цены ДО")
-    if settings["duration_more"] > settings["duration_less"]:
-        errors.append("Дюрация ОТ больше дюрации ДО")
-    if errors:
-        st.error("; ".join(errors))
+    GUI_CONFIG.parent.mkdir(parents=True, exist_ok=True)
+    GUI_CONFIG.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+    return GUI_CONFIG
 
 
 def config_editor() -> dict[str, Any]:
-    active = PROJECT_ROOT / "configs" / "gui_active.json"
-    source = active if active.exists() else DEFAULT_CONFIG
+    source = GUI_CONFIG if GUI_CONFIG.exists() else DEFAULT_CONFIG
     config = load_json(source, {"strategy": "balanced", "modules": {}})
     modules = config.setdefault("modules", {})
     with st.expander("Настройка модулей", expanded=False):
@@ -143,7 +156,7 @@ def config_editor() -> dict[str, Any]:
                 settings["enabled"] = st.toggle(title, value=bool(settings.get("enabled", True)), key=f"enabled_{key}")
                 st.caption(description)
                 if key == "market_search":
-                    search_criteria_editor(settings)
+                    render_search_criteria_editor(settings)
                     current = str(settings.get("version", "v1")).lower()
                     scanner_label = st.radio(
                         "Версия сканера",
@@ -224,15 +237,26 @@ def config_editor() -> dict[str, Any]:
 def execute_modules(run_dir: Path, modules: list[str], config_path: Path, refresh_ratings: bool) -> tuple[int, str]:
     run_dir.mkdir(parents=True, exist_ok=True)
     python_executable = project_python()
-    command = [str(python_executable), str(PROJECT_ROOT / "bondlab.py"), "pipeline", "--run-dir", str(run_dir), "--config", str(config_path)]
+    args = ["pipeline", "--run-dir", str(run_dir), "--config", str(config_path)]
     for key in modules:
-        command += ["--only-module", key]
+        args += ["--only-module", key]
     if refresh_ratings:
-        command.append("--refresh-ratings")
-    child_env = build_subprocess_env(PROJECT_ROOT)
-    process = subprocess.Popen(
-        command, cwd=PROJECT_ROOT, env=child_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, encoding="utf-8", errors="replace", bufsize=1,
+        args.append("--refresh-ratings")
+    command = entrypoint_command(
+        PROJECT_ROOT / "bondlab.py",
+        args,
+        python=python_executable,
+    )
+    process = popen_command(
+        command,
+        cwd=PROJECT_ROOT,
+        project_root=PROJECT_ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        bufsize=1,
     )
     placeholder = st.empty()
     lines: list[str] = [f"Python pipeline: {python_executable}"]
@@ -244,12 +268,51 @@ def execute_modules(run_dir: Path, modules: list[str], config_path: Path, refres
     return process.wait(), "\n".join(lines)
 
 
+def _render_copy_log(log: str) -> None:
+    payload = json.dumps(log, ensure_ascii=False).replace("</", "<\\/")
+    components.html(
+        f"""
+        <div style="display:flex;gap:8px;align-items:center;font-family:sans-serif">
+          <button id="copy-log" style="padding:8px 14px;cursor:pointer;border:1px solid #999;border-radius:6px;background:white">
+            📋 Скопировать лог
+          </button>
+          <span id="copy-status" style="font-size:13px"></span>
+        </div>
+        <script>
+          const text = {payload};
+          const button = document.getElementById('copy-log');
+          const status = document.getElementById('copy-status');
+          async function copyText() {{
+            try {{
+              await navigator.clipboard.writeText(text);
+              status.textContent = 'Скопировано';
+            }} catch (e) {{
+              const area = document.createElement('textarea');
+              area.value = text;
+              area.style.position = 'fixed';
+              area.style.opacity = '0';
+              document.body.appendChild(area);
+              area.focus();
+              area.select();
+              const ok = document.execCommand('copy');
+              document.body.removeChild(area);
+              status.textContent = ok ? 'Скопировано' : 'Не удалось скопировать';
+            }}
+          }}
+          button.addEventListener('click', copyText);
+        </script>
+        """,
+        height=48,
+    )
+
+
 def run_with_ui(run_dir: Path, selected: list[str], config: dict[str, Any], refresh_ratings: bool) -> None:
     config_path = save_gui_config(config)
     with st.status("Pipeline выполняется…", expanded=True) as status:
         code, log = execute_modules(run_dir, selected, config_path, refresh_ratings)
         log_path = run_dir / "gui_last_run.log"
         log_path.write_text(log, encoding="utf-8")
+        _render_copy_log(log)
         if code == 0:
             status.update(label="Анализ успешно завершён", state="complete")
             st.success("Готово. Единый bonds_master.json также обновлён.")
@@ -278,18 +341,6 @@ def render_start_today(config: dict[str, Any]) -> None:
     confirm = st.checkbox("Запустить анализ с выбранной конфигурацией", key="start_confirm")
     if st.button("▶ Запустить анализ на сегодня", type="primary", use_container_width=True, disabled=not confirm):
         run_with_ui(TODAY_RUN, enabled, config, refresh)
-
-
-def read_excel_safely(path: Path | None, preferred: list[str] | None = None) -> pd.DataFrame:
-    if path is None:
-        return pd.DataFrame()
-    try:
-        book = pd.ExcelFile(path)
-        sheet = next((x for x in (preferred or []) if x in book.sheet_names), book.sheet_names[0])
-        return pd.read_excel(path, sheet_name=sheet)
-    except Exception as exc:
-        st.warning(f"Не удалось прочитать {path.name}: {exc}")
-        return pd.DataFrame()
 
 
 def trace_table(run_dir: Path) -> pd.DataFrame:
@@ -368,15 +419,6 @@ def render_bonds(run_dir: Path) -> None:
     st.dataframe(data, use_container_width=True, hide_index=True)
 
 
-def deep_get(item: dict[str, Any], dotted_path: str) -> Any:
-    value: Any = item
-    for part in dotted_path.split("."):
-        if not isinstance(value, dict):
-            return None
-        value = value.get(part)
-    return value
-
-
 def candidate_file(run_dir: Path) -> Path:
     return run_dir / "decisions" / "candidates.json"
 
@@ -448,78 +490,6 @@ def render_bond_explanation(bond: dict[str, Any]) -> None:
         st.caption("Shortlist: " + str(shortlist_reason))
 
 
-def render_candidates(run_dir: Path) -> None:
-    st.subheader("Кандидаты к покупке")
-    st.caption("Соберите собственный короткий список и сравнивайте бумаги на одном экране. Данные берутся из bonds_master.json, а не напрямую из Excel.")
-    master = load_master(run_dir)
-    bonds = master.get("bonds", [])
-    if not bonds:
-        st.info("Нет данных для сравнения. Сначала выполните хотя бы поиск облигаций.")
-        return
-
-    by_secid = {str(bond.get("secid")): bond for bond in bonds}
-    options = list(by_secid)
-    defaults = [secid for secid in saved_candidates(run_dir) if secid in by_secid]
-    selected = st.multiselect(
-        "Выберите 2–10 облигаций",
-        options,
-        default=defaults,
-        max_selections=10,
-        format_func=lambda secid: bond_label(by_secid[secid]),
-    )
-    if st.button("Сохранить список кандидатов"):
-        save_candidates(run_dir, selected)
-        st.success("Список сохранён для этого дня анализа.")
-
-    if len(selected) < 2:
-        st.info("Выберите минимум две облигации для сравнения.")
-        return
-
-    chosen = [by_secid[secid] for secid in selected]
-    available_metrics = [
-        name for name, path in COMPARE_METRICS.items()
-        if any(deep_get(bond, path) is not None for bond in chosen)
-    ]
-    default_metrics = [name for name in DEFAULT_COMPARE_METRICS if name in available_metrics]
-    metrics = st.multiselect("Параметры сравнения", available_metrics, default=default_metrics or available_metrics[:5])
-
-    compare_rows = []
-    labels = {bond["secid"]: (bond.get("name") or bond["secid"]) for bond in chosen}
-    for metric in metrics:
-        row = {"Параметр": metric}
-        path = COMPARE_METRICS[metric]
-        for bond in chosen:
-            row[labels[bond["secid"]]] = deep_get(bond, path)
-        compare_rows.append(row)
-    st.dataframe(pd.DataFrame(compare_rows), use_container_width=True, hide_index=True)
-
-    scored = [(bond, score_for_leader(bond)) for bond in chosen]
-    scored = [(bond, score) for bond, score in scored if score is not None]
-    if scored:
-        leader, leader_score = max(scored, key=lambda pair: pair[1])
-        st.info(f"По текущему итоговому/глубокому скорингу лидирует **{bond_label(leader)}** — {leader_score:.0f} баллов. Это не отдельная рекомендация: результат зависит от включённых модулей.")
-
-    chart_metrics = st.multiselect("Графики", metrics, default=metrics[: min(3, len(metrics))], key="candidate_charts")
-    for metric in chart_metrics:
-        values = []
-        for bond in chosen:
-            value = deep_get(bond, COMPARE_METRICS[metric])
-            try:
-                numeric = float(value) if value is not None else None
-            except (TypeError, ValueError):
-                numeric = None
-            if numeric is not None:
-                values.append({"Облигация": labels[bond["secid"]], metric: numeric})
-        if values:
-            st.markdown(f"**{metric}**")
-            st.bar_chart(pd.DataFrame(values).set_index("Облигация"))
-
-    st.markdown("### Почему такие оценки")
-    for bond in chosen:
-        with st.container(border=True):
-            render_bond_explanation(bond)
-
-
 def render_rerun(run_dir: Path, config: dict[str, Any]) -> None:
     st.subheader("Обновить только часть анализа")
     st.info("Финальное решение можно пересчитать отдельно. После запуска bonds_master.json перестроится автоматически.")
@@ -538,36 +508,3 @@ def render_rerun(run_dir: Path, config: dict[str, Any]) -> None:
         st.error("Не хватает входных данных:\n\n" + "\n\n".join(sorted(set(missing))))
     if st.button("▶ Запустить выбранные модули", type="primary", disabled=not bool(selected) or bool(missing), use_container_width=True):
         run_with_ui(run_dir, selected, config, refresh)
-
-
-def main() -> None:
-    st.set_page_config(page_title="MOEX Bond Lab", page_icon="📊", layout="wide")
-    st.title("📊 MOEX Bond Lab")
-    st.caption("Сканер → анализ → сравнение кандидатов → финальное решение.")
-    config = config_editor()
-    dirs = run_dirs()
-    choices = ["➕ Новый анализ на сегодня"] + [path.name for path in dirs]
-    default = choices.index(TODAY_RUN.name) if TODAY_RUN.name in choices else 0
-    selected = st.sidebar.selectbox("Анализ", choices, index=default)
-    if selected == "➕ Новый анализ на сегодня":
-        render_start_today(config)
-        return
-    run_dir = resolve_run_dir(selected)
-    is_today = run_dir.name == TODAY_RUN.name
-    st.sidebar.success("Текущий день: модули можно обновлять") if is_today else st.sidebar.info("Архив: только просмотр")
-    tabs = st.tabs(["Обзор", "Облигации", "Кандидаты", "Модули и причины", "Запуск / обновление"])
-    with tabs[0]:
-        render_overview(run_dir)
-    with tabs[1]:
-        render_bonds(run_dir)
-    with tabs[2]:
-        render_candidates(run_dir)
-    with tabs[3]:
-        trace = trace_table(run_dir)
-        st.dataframe(trace, use_container_width=True, hide_index=True) if not trace.empty else st.info("Журнал пока отсутствует")
-    with tabs[4]:
-        render_rerun(run_dir, config) if is_today else st.info("Архив доступен только для просмотра")
-
-
-if __name__ == "__main__":
-    main()

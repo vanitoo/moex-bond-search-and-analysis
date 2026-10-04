@@ -5,14 +5,11 @@ from typing import Any
 
 import pandas as pd
 
-from pipeline_common import safe_float
+from app.core.pipeline_common import safe_float
+from app.core.rating_utils import normalize_rating
 from moex_bond_search_and_analysis.rating_signal import build_rating_signal
 
 
-RATING_ORDER = [
-    "D", "C", "CC", "CCC", "B-", "B", "B+", "BB-", "BB", "BB+",
-    "BBB-", "BBB", "BBB+", "A-", "A", "A+", "AA-", "AA", "AA+", "AAA",
-]
 CRITICAL = (
     "дефолт",
     "просроч",
@@ -26,16 +23,6 @@ def normalize(value: Any) -> str:
     if value is None or pd.isna(value):
         return ""
     return re.sub(r"\s+", " ", str(value).strip().lower().replace("ё", "е"))
-
-
-def rating(value: Any) -> str:
-    if value is None or pd.isna(value):
-        return ""
-    raw = str(value).strip()
-    if not raw or raw.lower() in {"nan", "none", "null", "—", "-"}:
-        return ""
-    text = re.sub(r"[^A-Z+\-]", "", raw.upper().replace("(RU)", "").replace("RU", ""))
-    return text if text in RATING_ORDER else ""
 
 
 def yes(value: Any) -> bool:
@@ -172,7 +159,7 @@ def decide(
         used.append("market_search")
 
     secid = str(row.get("Код ценной бумаги") or "").strip().upper()
-    current_rating = rating(row.get("Рейтинг"))
+    current_rating = normalize_rating(row.get("Рейтинг"))
     credit_missing = str(row.get("Недостающие данные") or "").strip()
     risks = normalize(row.get("Риски") or row.get("Риски и ограничения"))
     if "credit" in enabled:

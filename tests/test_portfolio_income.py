@@ -1,6 +1,6 @@
 from datetime import date
 
-from portfolio_income import analyze_portfolio_income
+from app.portfolio.portfolio_income import analyze_portfolio_income
 
 
 def test_income_calendar_multiplies_cashflows_by_quantity():

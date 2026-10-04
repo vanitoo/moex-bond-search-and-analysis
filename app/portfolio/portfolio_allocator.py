@@ -4,7 +4,7 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
-from portfolio_impact import deep_get, infer_issuer, portfolio_rows, risk_level, safe_float
+from app.portfolio.portfolio_impact import deep_get, infer_issuer, portfolio_rows, risk_level, safe_float
 
 
 @dataclass(frozen=True)

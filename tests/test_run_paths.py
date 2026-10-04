@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from run_paths import latest_analysis_run, latest_pipeline_run, new_run_dir
+from app.core.run_paths import latest_analysis_run, latest_pipeline_run, new_run_dir
 
 
 def test_new_runs_live_under_runs_directory(tmp_path: Path):

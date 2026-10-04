@@ -1,23 +1,24 @@
 from __future__ import annotations
 
 import argparse
-import subprocess
-import sys
 from datetime import datetime
 from pathlib import Path
 
+from app.core.process_runner import entrypoint_command, module_command, run_command
+from app.core.project_paths import (
+    GUI_CONFIG,
+    PORTFOLIO_HISTORY_ROOT,
+    PROJECT_ROOT,
+    REPORTS_ROOT,
+    RUNS_ROOT,
+    VIRTUAL_PORTFOLIOS_ROOT,
+)
 from app.core.run_paths import latest_analysis_run
-from app.core.runtime_env import build_subprocess_env
 
 
 def _run(command: list[str], cwd: Path) -> None:
     print("\n> " + " ".join(command))
-    subprocess.run(
-        command,
-        cwd=cwd,
-        check=True,
-        env=build_subprocess_env(cwd),
-    )
+    run_command(command, cwd=cwd, project_root=PROJECT_ROOT)
 
 
 def latest_analysis_dir(root: Path) -> Path | None:
@@ -40,7 +41,7 @@ def main() -> None:
         help="full — полный pipeline; monitor — лёгкое обновление и мониторинг только портфеля",
     )
     parser.add_argument("--portfolio", required=True)
-    parser.add_argument("--config", default="configs/gui_active.json")
+    parser.add_argument("--config", default=str(GUI_CONFIG))
     parser.add_argument("--run-dir")
     parser.add_argument("--amount", type=float, default=50_000.0)
     parser.add_argument("--refresh-ratings", action="store_true")
@@ -51,14 +52,13 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    root = Path(__file__).resolve().parents[2]
-    python = sys.executable
+    root = PROJECT_ROOT
     baseline_kind = "полный анализ"
     if args.run_dir:
         run_dir = Path(args.run_dir).expanduser().resolve()
         baseline_kind = "указанная папка"
     elif args.mode == "full":
-        run_dir = root / "runs" / f"bond_{datetime.now():%Y_%m_%d}"
+        run_dir = RUNS_ROOT / f"bond_{datetime.now():%Y_%m_%d}"
     else:
         run_dir = latest_analysis_dir(root)
         if run_dir is None:
@@ -67,51 +67,61 @@ def main() -> None:
             baseline_kind = "автономный портфельный мониторинг"
 
     config = Path(args.config).expanduser().resolve()
-    portfolio_dir = root / "data" / "virtual_portfolios"
-    history_dir = root / "data" / "portfolio_monitor_history"
-    report_dir = root / "reports"
+    portfolio_dir = VIRTUAL_PORTFOLIOS_ROOT
+    history_dir = PORTFOLIO_HISTORY_ROOT
+    report_dir = REPORTS_ROOT
 
     if args.mode == "full":
-        command = [
-            python, str(root / "app" / "cli" / "pipeline.py"),
-            "--from-stage", "1",
-            "--to-stage", "10",
-            "--run-dir", str(run_dir),
-            "--config", str(config),
-            "--portfolio", args.portfolio,
-        ]
+        command = entrypoint_command(
+            root / "bondlab.py",
+            [
+                "pipeline",
+                "--from-stage", "1",
+                "--to-stage", "10",
+                "--run-dir", str(run_dir),
+                "--config", str(config),
+                "--portfolio", args.portfolio,
+            ],
+        )
         if args.refresh_ratings:
             command.append("--refresh-ratings")
         _run(command, root)
     else:
         run_dir.mkdir(parents=True, exist_ok=True)
         if not args.skip_portfolio_refresh:
-            _run([
-                python, str(root / "app" / "portfolio" / "portfolio_daily_refresh.py"),
+            _run(module_command(
+                "app.portfolio.portfolio_daily_refresh",
+                [
+                    "--name", args.portfolio,
+                    "--run-dir", str(run_dir),
+                    "--portfolio-dir", str(portfolio_dir),
+                    "--config", str(config),
+                ],
+            ), root)
+
+        _run(module_command(
+            "app.portfolio.portfolio_monitor",
+            [
+                "daily",
                 "--name", args.portfolio,
                 "--run-dir", str(run_dir),
                 "--portfolio-dir", str(portfolio_dir),
-                "--config", str(config),
-            ], root)
+                "--history-dir", str(history_dir),
+                "--report-dir", str(report_dir),
+            ],
+        ), root)
 
-        _run([
-            python, str(root / "app" / "portfolio" / "portfolio_monitor.py"), "daily",
+    _run(module_command(
+        "app.portfolio.daily_actions",
+        [
             "--name", args.portfolio,
             "--run-dir", str(run_dir),
             "--portfolio-dir", str(portfolio_dir),
             "--history-dir", str(history_dir),
             "--report-dir", str(report_dir),
-        ], root)
-
-    _run([
-        python, str(root / "app" / "portfolio" / "daily_actions.py"),
-        "--name", args.portfolio,
-        "--run-dir", str(run_dir),
-        "--portfolio-dir", str(portfolio_dir),
-        "--history-dir", str(history_dir),
-        "--report-dir", str(report_dir),
-        "--amount", str(args.amount),
-    ], root)
+            "--amount", str(args.amount),
+        ],
+    ), root)
 
     print("\nАвтопилот завершён")
     print(f"Режим: {args.mode}")

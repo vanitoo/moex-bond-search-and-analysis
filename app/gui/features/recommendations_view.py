@@ -5,10 +5,10 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-import base
-import portfolio_view as v4
-from portfolio_recommendation import recommend_candidate
-from portfolio_store import list_portfolios, load_portfolio
+from app.gui.features import base
+from app.gui.features import portfolio_view
+from app.portfolio.portfolio_recommendation import recommend_candidate
+from app.portfolio.portfolio_store import list_portfolios, load_portfolio
 
 
 PORTFOLIO_DIR = base.PROJECT_ROOT / "data" / "virtual_portfolios"
@@ -79,12 +79,10 @@ def render_bond_explanation(bond: dict[str, Any], run_dir) -> None:
 
 
 def render_candidates(run_dir) -> None:
-    original = base.render_bond_explanation
-    try:
-        base.render_bond_explanation = lambda bond: render_bond_explanation(bond, run_dir)
-        v4.render_candidates(run_dir)
-    finally:
-        base.render_bond_explanation = original
+    portfolio_view.render_candidates(
+        run_dir,
+        explanation_renderer=lambda bond: render_bond_explanation(bond, run_dir),
+    )
 
 
 def render_recommendations(run_dir) -> None:
@@ -114,8 +112,8 @@ def render_recommendations(run_dir) -> None:
         return
 
     col1, col2 = st.columns([2, 1])
-    portfolio_name = col1.selectbox("Портфель", list(portfolios), key="rec_portfolio_v6")
-    amount = col2.number_input("Сумма одной покупки, ₽", min_value=1_000.0, value=50_000.0, step=5_000.0, key="rec_amount_v6")
+    portfolio_name = col1.selectbox("Портфель", list(portfolios), key="rec_portfolio")
+    amount = col2.number_input("Сумма одной покупки, ₽", min_value=1_000.0, value=50_000.0, step=5_000.0, key="rec_amount")
     portfolio = load_portfolio(PORTFOLIO_DIR, portfolio_name)
 
     saved = [secid for secid in base.saved_candidates(run_dir) if secid in by_secid]
@@ -123,7 +121,7 @@ def render_recommendations(run_dir) -> None:
         "Что анализировать",
         ["Мой список кандидатов", "Все бумаги текущего master"],
         horizontal=True,
-        key="rec_scope_v6",
+        key="rec_scope",
     )
     secids = saved if scope == "Мой список кандидатов" else list(by_secid)
     if scope == "Мой список кандидатов" and not secids:
@@ -165,7 +163,7 @@ def render_recommendations(run_dir) -> None:
         "Подробное объяснение",
         options,
         format_func=lambda secid: next(_action_message(item) for item in results if item["secid"] == secid),
-        key="rec_detail_v6",
+        key="rec_detail",
     )
     item = next(item for item in results if item["secid"] == selected)
     scenario = item["scenario"]
@@ -205,41 +203,3 @@ def render_run_update(run_dir, config: dict[str, Any]) -> None:
 
     st.markdown("### Точечный перезапуск")
     base.render_rerun(run_dir, config)
-
-
-def main() -> None:
-    st.set_page_config(page_title="MOEX Bond Lab", page_icon="📊", layout="wide")
-    st.title("📊 MOEX Bond Lab")
-    st.caption("Сканер → анализ → кандидаты → портфель → рекомендации → мониторинг.")
-    config = base.config_editor()
-    dirs = base.run_dirs()
-    choices = ["➕ Новый анализ на сегодня"] + [path.name for path in dirs]
-    default = choices.index(base.TODAY_RUN.name) if base.TODAY_RUN.name in choices else 0
-    selected = st.sidebar.selectbox("Анализ", choices, index=default)
-    if selected == "➕ Новый анализ на сегодня":
-        base.render_start_today(config)
-        return
-
-    run_dir = base.PROJECT_ROOT / selected
-    is_today = run_dir.name == base.TODAY_RUN.name
-    st.sidebar.success("Текущий день: модули можно обновлять") if is_today else st.sidebar.info("Архив: только просмотр")
-    tabs = st.tabs(["Обзор", "Облигации", "Кандидаты", "Портфель", "Рекомендации", "Модули и причины", "Запуск / обновление"])
-    with tabs[0]:
-        base.render_overview(run_dir)
-    with tabs[1]:
-        base.render_bonds(run_dir)
-    with tabs[2]:
-        render_candidates(run_dir)
-    with tabs[3]:
-        v4.render_portfolio(run_dir)
-    with tabs[4]:
-        render_recommendations(run_dir)
-    with tabs[5]:
-        trace = base.trace_table(run_dir)
-        st.dataframe(trace, width="stretch", hide_index=True) if not trace.empty else st.info("Журнал пока отсутствует")
-    with tabs[6]:
-        render_run_update(run_dir, config) if is_today else st.info("Архив доступен только для просмотра")
-
-
-if __name__ == "__main__":
-    main()

@@ -1,4 +1,4 @@
-from portfolio_manual import make_position
+from app.portfolio.portfolio_manual import make_position
 
 
 def test_make_position_uses_manual_purchase_data():

@@ -1,42 +1,17 @@
 from __future__ import annotations
 
 import argparse
-import sys
 from datetime import datetime
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-APP_ROOT = PROJECT_ROOT / "app"
-CORE_ROOT = APP_ROOT / "core"
-PORTFOLIO_ROOT = APP_ROOT / "portfolio"
-SRC_ROOT = PROJECT_ROOT / "src"
-for _path in (str(CORE_ROOT), str(PORTFOLIO_ROOT), str(APP_ROOT), str(SRC_ROOT), str(PROJECT_ROOT)):
-    if _path not in sys.path:
-        sys.path.insert(0, _path)
 from typing import Any
 
 import pandas as pd
 
-from pipeline_common import clean_secid_rows, latest, merge_by_secid, safe_float
+from app.core.pipeline_common import clean_secid_rows, latest, merge_by_secid, safe_float
+from app.core.search_contract import SEARCH_REQUIRED_COLUMNS, missing_search_columns, normalize_search_columns
 
-REQUIRED = {"Полное наименование", "Код ценной бумаги", "Нужна квалификация?", "Цена, %", "Объем сделок с 15 дней, шт.", "Доходность", "Дюрация, месяцев"}
-
-
-def normalize_search_columns(df: pd.DataFrame) -> pd.DataFrame:
-    """Normalize V1/V2 search-column aliases to the analysis contract."""
-    df = df.copy()
-    aliases = {
-        "Нужна квалификация?": ["Для квалифицированных инвесторов"],
-        "Объем сделок с 15 дней, шт.": ["Объем за 15 дней, шт.", "Объем торгов за 15 дней"],
-    }
-    for canonical, alternatives in aliases.items():
-        if canonical in df.columns:
-            continue
-        for alternative in alternatives:
-            if alternative in df.columns:
-                df[canonical] = df[alternative]
-                break
-    return df
+REQUIRED = SEARCH_REQUIRED_COLUMNS
 
 
 def yes(value: Any) -> bool:
@@ -143,7 +118,7 @@ def main() -> None:
     source = Path(args.input) if args.input else latest(root, "bond_search_*.xlsx")
     df = clean_secid_rows(pd.read_excel(source, sheet_name="Результаты поиска"))
     df = normalize_search_columns(df)
-    missing = REQUIRED.difference(df.columns)
+    missing = missing_search_columns(df)
     if missing:
         raise ValueError("Нет колонок: " + ", ".join(sorted(missing)))
 

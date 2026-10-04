@@ -7,9 +7,9 @@ from typing import Any
 
 import pandas as pd
 
-from pipeline_common import clean_secid_rows, latest, normalize, safe_float
+from app.core.pipeline_common import clean_secid_rows, latest, normalize, safe_float
 
-from stage_registry import BY_SCRIPT, MODULES, ModuleSpec
+from app.core.stage_registry import BY_SCRIPT, MODULES, ModuleSpec
 
 
 def load_config(path: Path | None) -> dict[str, Any]:

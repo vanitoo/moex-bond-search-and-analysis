@@ -1,6 +1,6 @@
 import pandas as pd
 
-from decision_engine import annotate_shortlist_reasons, decide
+from app.core.decision_engine import annotate_shortlist_reasons, decide
 
 
 def _row(**overrides):

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from portfolio_impact import deep_get, infer_issuer, risk_level, safe_float, simulate_purchase
+from app.portfolio.portfolio_impact import deep_get, infer_issuer, risk_level, safe_float, simulate_purchase
 
 
 KEY_DATA_PATHS = (
