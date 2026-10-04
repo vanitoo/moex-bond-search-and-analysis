@@ -8,6 +8,7 @@ from pathlib import Path
 import pandas as pd
 
 from app.core.configuration import is_enabled, load_config
+from app.core.stage_registry import PIPELINE_STAGES
 from app.core.pipeline_common import clean_secid_rows, latest, merge_by_secid
 from moex_bond_search_and_analysis.rating_signal import load_rating_events
 from app.portfolio.portfolio_shortlist import annotate_decisions, write_shortlist
@@ -62,7 +63,7 @@ def main() -> None:
 
     root = Path(".")
     config = load_config(Path(args.config).expanduser().resolve() if args.config else None)
-    enabled = {key for key in config.get("modules", {}) if is_enabled(config, key)}
+    enabled = {stage.key for stage in PIPELINE_STAGES if is_enabled(config, stage.key)}
     df, source_name = choose_base(root, config, args.input)
     rating_events = load_rating_events(root)
 
