@@ -11,11 +11,17 @@ Usage:
   python bondlab.py pipeline [pipeline options]
   python bondlab.py full --portfolio NAME [daily/full options]
   python bondlab.py monitor --portfolio NAME [daily/monitor options]
+  python bondlab.py portfolio create --name NAME
+  python bondlab.py portfolio show --name NAME
+  python bondlab.py portfolio ledger --name NAME
+  python bondlab.py invest --portfolio NAME --amount RUB [--refresh]
 
 Examples:
   .\.venv\Scripts\python.exe .\bondlab.py gui
   .\.venv\Scripts\python.exe .\bondlab.py pipeline --from-stage 1 --to-stage 10 --config .\configs\gui_active.json
   .\.venv\Scripts\python.exe .\bondlab.py monitor --portfolio "Основной" --config .\configs\gui_active.json
+  .\.venv\Scripts\python.exe .\bondlab.py portfolio create --name "Основной"
+  .\.venv\Scripts\python.exe .\bondlab.py invest --portfolio "Основной" --amount 50000 --refresh
 """
 
 
@@ -56,6 +62,22 @@ def main() -> None:
         from app.cli.daily import main as daily_main
 
         _invoke(daily_main, [command, *rest])
+        return
+
+    if command == "portfolio":
+        from app.cli.portfolio import main as portfolio_main
+
+        _invoke(portfolio_main, rest)
+        return
+
+    if command == "invest":
+        from app.cli.portfolio import main as portfolio_main
+
+        translated = list(rest)
+        if "--portfolio" in translated:
+            index = translated.index("--portfolio")
+            translated[index] = "--name"
+        _invoke(portfolio_main, ["invest", *translated])
         return
 
     raise SystemExit(f"Неизвестная команда: {command}\n\n{USAGE}")
