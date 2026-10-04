@@ -165,6 +165,8 @@ def run_decision_workflow(request: DecisionWorkflowRequest) -> DecisionWorkflowR
     request.output_dir.mkdir(parents=True, exist_ok=True)
     shortlist = write_shortlist(result, request.output_dir, stamp)
     result = annotate_shortlist_reasons(result, shortlist)
+    if request.store is not None and run_id:
+        request.store.write_frame(run_id, "decision", result)
     candidates = result[result["Допущена в портфель"] == "ДА"].copy()
     xlsx, html, json_path = _write_outputs(
         result, candidates, request, enabled, source_name, len(rating_events), stamp
