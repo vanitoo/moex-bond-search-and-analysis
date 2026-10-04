@@ -11,7 +11,7 @@ from app.core.repair import run_repair
 def main() -> None:
     parser = argparse.ArgumentParser(description="Повторная загрузка проблемных данных в существующий run")
     parser.add_argument("--run-dir", required=True)
-    parser.add_argument("--module", choices=["market_search", "cashflow", "news", "liquidity", "ofz_spread", "credit", "decision"])
+    parser.add_argument("--module", choices=["market_search", "cashflow", "news", "liquidity", "ofz_spread", "analysis", "deep_analysis", "credit", "decision"])
     parser.add_argument("--attempts", type=int, default=1)
     parser.add_argument("--config", default=str(GUI_CONFIG))
     args = parser.parse_args()
