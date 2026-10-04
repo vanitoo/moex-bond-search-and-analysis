@@ -164,3 +164,14 @@ pythonpath = [".", "src"]
 
 Скрипт `src/cli.py` оставлен только как compatibility shim. Рабочая реализация находится
 в `moex_bond_search_and_analysis.cli`.
+
+
+## Оркестрация после пятого рефакторинга
+
+- `app/core/process_runner.py` — единственная общая точка для запуска дочерних Python-процессов и package modules с правильным runtime environment.
+- `app/cli/pipeline.py` больше не содержит собственный список `STAGES`: порядок и номера этапов берутся напрямую из `app/core/stage_registry.py`.
+- Runtime module этапа строится централизованно через `runtime_module_for_script()`; pipeline больше не собирает import-path вручную.
+- `app/cli/daily.py`, `app/portfolio/portfolio_daily_refresh.py` и GUI используют общий command/process builder вместо дублирования `sys.executable`, `python -m` и `PYTHONPATH`.
+- GUI и daily CLI используют константы из `app/core/project_paths.py` для конфигов, runs, reports и portfolio data вместо ручной сборки путей.
+
+Следующий рефакторинг: отделить configuration schema/defaults от Streamlit и CLI, чтобы GUI, pipeline и automation читали одну типизированную модель настроек без дублирования default-значений.
