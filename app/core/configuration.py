@@ -204,10 +204,16 @@ def save_config(path: Path, config: dict[str, Any]) -> Path:
     return path
 
 
+def module_defaults(key: str) -> dict[str, Any]:
+    """Return a mutable copy of the canonical defaults for one module."""
+
+    return deepcopy(DEFAULT_MODULES.get(key, {}))
+
+
 def module_config(config: dict[str, Any], key: str) -> dict[str, Any]:
     """Return one module settings block with canonical defaults applied."""
 
-    defaults = deepcopy(DEFAULT_MODULES.get(key, {}))
+    defaults = module_defaults(key)
     modules = config.get("modules", {})
     if not isinstance(modules, dict):
         return defaults
