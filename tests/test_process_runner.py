@@ -4,8 +4,9 @@ from app.core.process_runner import entrypoint_command, module_command, python_c
 
 
 def test_python_command_uses_explicit_interpreter():
-    assert python_command("script.py", "--flag", python=Path("/venv/python")) == [
-        "/venv/python",
+    interpreter = Path("/venv/python")
+    assert python_command("script.py", "--flag", python=interpreter) == [
+        str(interpreter),
         "script.py",
         "--flag",
     ]
