@@ -13,6 +13,7 @@ import streamlit.components.v1 as components
 
 from app.gui.selection_profiles_ui import search_criteria_editor as render_search_criteria_editor
 
+from app.core.configuration import load_config, module_config, save_config
 from app.core.master_dataset import build_master_dataset
 from app.core.process_runner import entrypoint_command, popen_command
 from app.core.project_paths import DEFAULT_CONFIG, GUI_CONFIG, PROJECT_ROOT, RUNS_ROOT
@@ -139,25 +140,23 @@ def module_state(run_dir: Path, key: str) -> dict[str, Any]:
 
 
 def save_gui_config(config: dict[str, Any]) -> Path:
-    GUI_CONFIG.parent.mkdir(parents=True, exist_ok=True)
-    GUI_CONFIG.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
-    return GUI_CONFIG
+    return save_config(GUI_CONFIG, config)
 
 
 def config_editor() -> dict[str, Any]:
     source = GUI_CONFIG if GUI_CONFIG.exists() else DEFAULT_CONFIG
-    config = load_json(source, {"strategy": "balanced", "modules": {}})
-    modules = config.setdefault("modules", {})
+    config = load_config(source)
+    modules = config["modules"]
     with st.expander("Настройка модулей", expanded=False):
         cols = st.columns(2)
         for index, (key, title, description) in enumerate(MODULES):
-            settings = modules.setdefault(key, {})
+            settings = modules.setdefault(key, module_config(config, key))
             with cols[index % 2]:
                 settings["enabled"] = st.toggle(title, value=bool(settings.get("enabled", True)), key=f"enabled_{key}")
                 st.caption(description)
                 if key == "market_search":
                     render_search_criteria_editor(settings)
-                    current = str(settings.get("version", "v1")).lower()
+                    current = str(settings["version"]).lower()
                     scanner_label = st.radio(
                         "Версия сканера",
                         ["V1 — старый контрольный", "V2 — пакетный экспериментальный"],
@@ -168,40 +167,40 @@ def config_editor() -> dict[str, Any]:
                     if settings["version"] == "v2":
                         settings["workers"] = st.slider(
                             "Параллельных запросов V2", min_value=1, max_value=8,
-                            value=int(settings.get("workers", 5)), key="market_v2_workers",
+                            value=int(settings["workers"]), key="market_v2_workers",
                         )
                         settings["cache_hours"] = st.number_input(
                             "Срок кэша V2, часов", min_value=0.0, max_value=168.0,
-                            value=float(settings.get("cache_hours", 12)), step=1.0, key="market_v2_cache_hours",
+                            value=float(settings["cache_hours"]), step=1.0, key="market_v2_cache_hours",
                         )
                         st.warning("V2 экспериментальный. V1 и V2 получают абсолютно одинаковые критерии поиска.")
                 if key == "credit":
                     settings["fetch_financials"] = st.toggle(
                         "Автоматически получать финансовые данные из ГИР БО ФНС",
-                        value=bool(settings.get("fetch_financials", True)),
+                        value=bool(settings["fetch_financials"]),
                         key="credit_fetch_financials",
                     )
                     if settings["fetch_financials"]:
                         f1, f2 = st.columns(2)
                         settings["financial_cache_days"] = int(f1.number_input(
                             "Кэш финансов, дней", min_value=0, max_value=365,
-                            value=int(settings.get("financial_cache_days", 35)), step=1,
+                            value=int(settings["financial_cache_days"]), step=1,
                             key="credit_financial_cache_days",
                         ))
                         settings["financial_workers"] = int(f2.slider(
                             "Параллельных запросов ФНС", min_value=1, max_value=4,
-                            value=int(settings.get("financial_workers", 1)),
+                            value=int(settings["financial_workers"]),
                             key="credit_financial_workers",
                         ))
                         f3, f4 = st.columns(2)
                         settings["financial_delay_seconds"] = float(f3.number_input(
                             "Пауза между запросами ФНС, сек.", min_value=0.0, max_value=10.0,
-                            value=float(settings.get("financial_delay_seconds", 1.2)), step=0.2,
+                            value=float(settings["financial_delay_seconds"]), step=0.2,
                             key="credit_financial_delay_seconds",
                         ))
                         settings["financial_retries"] = int(f4.slider(
                             "Повторов запроса ФНС", min_value=1, max_value=8,
-                            value=int(settings.get("financial_retries", 4)),
+                            value=int(settings["financial_retries"]),
                             key="credit_financial_retries",
                         ))
                         st.caption(
@@ -210,19 +209,19 @@ def config_editor() -> dict[str, Any]:
                         )
                     settings["fetch_bank_metrics"] = st.toggle(
                         "Получать банковские нормативы из Банка России",
-                        value=bool(settings.get("fetch_bank_metrics", True)),
+                        value=bool(settings["fetch_bank_metrics"]),
                         key="credit_fetch_bank_metrics",
                     )
                     if settings["fetch_bank_metrics"]:
                         b1, b2 = st.columns(2)
                         settings["bank_cache_days"] = int(b1.number_input(
                             "Кэш банковских нормативов, дней", min_value=0, max_value=365,
-                            value=int(settings.get("bank_cache_days", 7)), step=1,
+                            value=int(settings["bank_cache_days"]), step=1,
                             key="credit_bank_cache_days",
                         ))
                         settings["bank_delay_seconds"] = float(b2.number_input(
                             "Пауза между запросами ЦБ, сек.", min_value=0.0, max_value=10.0,
-                            value=float(settings.get("bank_delay_seconds", 0.4)), step=0.1,
+                            value=float(settings["bank_delay_seconds"]), step=0.1,
                             key="credit_bank_delay_seconds",
                         ))
                         st.caption(
@@ -327,14 +326,14 @@ def render_start_today(config: dict[str, Any]) -> None:
     st.subheader("Анализ на сегодня ещё не запускался")
     st.info("Создам папку сегодняшнего дня и запущу включённые модули.")
     st.caption(f"Pipeline будет запущен через: {project_python()}")
-    settings = config.get("modules", {}).get("market_search", {})
-    scanner = settings.get("version", "v1").upper()
+    settings = module_config(config, "market_search")
+    scanner = str(settings["version"]).upper()
     st.info(
-        f"Первый этап: {scanner}; доходность {settings.get('yield_more', 15)}–{settings.get('yield_less', 40)}%; "
-        f"цена {settings.get('price_more', 70)}–{settings.get('price_less', 120)}%; "
-        f"дюрация {settings.get('duration_more', 3)}–{settings.get('duration_less', 18)} мес."
+        f"Первый этап: {scanner}; доходность {settings['yield_more']}–{settings['yield_less']}%; "
+        f"цена {settings['price_more']}–{settings['price_less']}%; "
+        f"дюрация {settings['duration_more']}–{settings['duration_less']} мес."
     )
-    enabled = [key for key in MODULE_KEYS if config.get("modules", {}).get(key, {}).get("enabled", True)]
+    enabled = [key for key in MODULE_KEYS if bool(module_config(config, key).get("enabled", True))]
     st.write("Будут запущены модули:")
     st.write(" → ".join(LABELS[key] for key in enabled))
     refresh = st.checkbox("Принудительно обновить рейтинги", value=False, key="start_refresh")
@@ -496,7 +495,7 @@ def render_rerun(run_dir: Path, config: dict[str, Any]) -> None:
     st.caption(f"Pipeline будет запущен через: {project_python()}")
     selected = st.multiselect("Какие модули обновить", MODULE_KEYS, format_func=lambda key: LABELS[key], default=[])
     refresh = st.checkbox("Принудительно обновить рейтинги", value=False, key="rerun_refresh")
-    enabled = {key for key in MODULE_KEYS if config.get("modules", {}).get(key, {}).get("enabled", True)}
+    enabled = {key for key in MODULE_KEYS if bool(module_config(config, key).get("enabled", True))}
     missing: list[str] = []
     for key in selected:
         for dep in DEPENDENCIES.get(key, []):
