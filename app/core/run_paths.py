@@ -53,4 +53,13 @@ def latest_analysis_run(project_root: Path) -> Path | None:
 
 
 def new_run_dir(project_root: Path, stamp: str) -> Path:
-    return project_root / "runs" / f"bond_{stamp}"
+    runs_root = project_root / "runs"
+    base = runs_root / f"bond_{stamp}"
+    if not base.exists():
+        return base
+    index = 1
+    while True:
+        candidate = runs_root / f"bond_{stamp}_{index:03d}"
+        if not candidate.exists():
+            return candidate
+        index += 1
