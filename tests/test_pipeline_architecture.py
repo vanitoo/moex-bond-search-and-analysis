@@ -3,7 +3,8 @@ from pathlib import Path
 import pandas as pd
 
 from app.core.configuration import is_enabled, load_config
-from app.core.pipeline_architecture import _status_for_row
+from app.core.pipeline_architecture import _status_for_row, collect_stage
+from app.core.run_store import RunStore
 
 
 def test_balanced_config_enables_modules():
@@ -50,3 +51,22 @@ def test_default_config_path_resolves_from_project_root():
     config = load_config(None)
     assert config["strategy"] == "balanced"
     assert "modules" in config
+
+
+def test_collect_stage_prefers_sqlite_without_reading_excel(tmp_path: Path, monkeypatch):
+    from app.core.stage_registry import ModuleSpec
+    store = RunStore(tmp_path / "bondlab.db")
+    run_id = "run-1"
+    store.ensure_run(run_id, tmp_path)
+    store.write_frame(run_id, "analysis", pd.DataFrame([
+        {"Код ценной бумаги": "RU000A10TEST", "Оценка, 0-100": 90}
+    ]))
+    monkeypatch.setattr(pd, "read_excel", lambda *a, **k: (_ for _ in ()).throw(AssertionError("Excel must not be read")))
+    collect_stage(
+        tmp_path,
+        ModuleSpec("analysis", "5_bonds_analysis.py", "bond_analysis_*.xlsx", 0),
+        {"modules": {"analysis": {}}},
+        store=store,
+        run_id=run_id,
+    )
+    assert (tmp_path / "decisions" / "module_results.jsonl").exists()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from pathlib import Path
 
 from app.core.configuration import load_config
@@ -29,8 +30,8 @@ def main() -> None:
         output_dir=Path(args.output_dir),
         config=config,
         explicit_input=args.input,
-        store=RunStore(default_store_path(PROJECT_ROOT)),
-        run_id=run_id_for(Path(".")),
+        store=RunStore(Path(os.environ.get("BONDLAB_RUN_STORE") or default_store_path(PROJECT_ROOT))),
+        run_id=os.environ.get("BONDLAB_RUN_ID") or run_id_for(Path(".")),
     ))
 
     shortlist = result.shortlist

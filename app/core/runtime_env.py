@@ -32,6 +32,8 @@ def build_subprocess_env(
     *,
     unbuffered: bool = True,
     utf8: bool = True,
+    run_id: str | None = None,
+    run_store: Path | None = None,
 ) -> dict[str, str]:
     env = os.environ.copy()
     pythonpath = runtime_pythonpath(project_root)
@@ -44,4 +46,8 @@ def build_subprocess_env(
         env["PYTHONIOENCODING"] = "utf-8"
     if unbuffered:
         env["PYTHONUNBUFFERED"] = "1"
+    if run_id:
+        env["BONDLAB_RUN_ID"] = run_id
+    if run_store:
+        env["BONDLAB_RUN_STORE"] = str(run_store)
     return env

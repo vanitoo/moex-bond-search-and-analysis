@@ -11,7 +11,7 @@ import pandas as pd
 import requests
 
 from app.core.pipeline_common import dated_name, safe_float
-from app.core.stage_io import load_stage_frame
+from app.core.stage_io import load_stage_frame, publish_stage_frame
 
 MOEX = "https://iss.moex.com/iss"
 
@@ -93,9 +93,11 @@ def main() -> None:
             result.append(fetch(secid))
         except Exception as exc:
             result.append({"Код ценной бумаги": secid, "Ошибка cashflow": str(exc), "Полнота cashflow": "Ошибка"})
+    frame = pd.DataFrame(result)
+    publish_stage_frame("cashflow", frame)
     output = Path(args.output or dated_name("bond_cashflow", "xlsx"))
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        pd.DataFrame(result).to_excel(writer, sheet_name="Cashflow", index=False)
+        frame.to_excel(writer, sheet_name="Cashflow", index=False)
     print(output)
 
 

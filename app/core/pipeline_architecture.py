@@ -133,31 +133,33 @@ def collect_stage(
         write_summaries(run_dir, config)
         return
 
-    source = latest(run_dir, spec.output_pattern, required=False)
-    if source is None:
-        append_event(run_dir, {
-            "timestamp": datetime.now().isoformat(timespec="seconds"),
-            "module": spec.key,
-            "status": "ERROR",
-            "passed": None,
-            "hard_stop": False,
-            "score_delta": 0,
-            "reason_code": "OUTPUT_NOT_FOUND",
-            "reason": f"Не найден результат {spec.output_pattern}",
-        })
-        write_summaries(run_dir, config)
-        return
+    df = store.read_frame(run_id, spec.key) if store is not None and run_id is not None else None
+    if df is None:
+        source = latest(run_dir, spec.output_pattern, required=False)
+        if source is None:
+            append_event(run_dir, {
+                "timestamp": datetime.now().isoformat(timespec="seconds"),
+                "module": spec.key,
+                "status": "ERROR",
+                "passed": None,
+                "hard_stop": False,
+                "score_delta": 0,
+                "reason_code": "OUTPUT_NOT_FOUND",
+                "reason": f"Не найден результат {spec.output_pattern}",
+            })
+            write_summaries(run_dir, config)
+            return
+        try:
+            df = pd.read_excel(source, sheet_name=spec.sheet)
+        except Exception:
+            df = pd.read_excel(source, sheet_name=0)
+        if store is not None and run_id is not None:
+            store.write_frame(run_id, spec.key, df)
 
-    try:
-        df = pd.read_excel(source, sheet_name=spec.sheet)
-    except Exception:
-        df = pd.read_excel(source, sheet_name=0)
     secid_column = _find_secid_column(df)
     if secid_column and secid_column != "Код ценной бумаги":
         df = df.rename(columns={secid_column: "Код ценной бумаги"})
     df = clean_secid_rows(df)
-    if store is not None and run_id is not None:
-        store.write_frame(run_id, spec.key, df)
 
     for _, row in df.iterrows():
         status, passed, hard_stop, score_delta, code, reason = _status_for_row(spec.key, row)

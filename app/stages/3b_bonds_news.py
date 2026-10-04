@@ -9,7 +9,7 @@ from pathlib import Path
 import pandas as pd
 
 from app.core.pipeline_common import clean_secid_rows, dated_name, normalize
-from app.core.stage_io import load_stage_frame
+from app.core.stage_io import load_stage_frame, publish_stage_frame
 
 DANGER = {
     "Дефолт/просрочка": ("дефолт", "просроч", "не выплат", "невыплат", "технический дефолт"),
@@ -191,8 +191,10 @@ def main() -> None:
             "Прогнозы рейтинга": forecasts,
             "Последнее рейтинговое событие": event_date,
         })
+    frame = pd.DataFrame(result).drop_duplicates(subset=["Код ценной бумаги"])
+    publish_stage_frame("news", frame)
     output = Path(args.output or dated_name("bond_news", "xlsx"))
-    pd.DataFrame(result).drop_duplicates(subset=["Код ценной бумаги"]).to_excel(output, sheet_name="Новости", index=False)
+    frame.to_excel(output, sheet_name="Новости", index=False)
 
     rating_output = Path(dated_name("bond_rating_events", "xlsx"))
     rating_rows: list[dict] = []
