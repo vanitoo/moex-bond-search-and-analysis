@@ -2,7 +2,9 @@ from pathlib import Path
 
 from app.core.configuration import (
     default_config,
+    http_config,
     load_config,
+    load_runtime_config,
     module_config,
     normalize_config,
     save_config,
@@ -70,3 +72,22 @@ def test_save_and_load_config_round_trip(tmp_path: Path):
 def test_unknown_future_top_level_section_is_preserved():
     config = normalize_config({"future": {"feature": True}})
     assert config["future"] == {"feature": True}
+
+
+def test_http_config_applies_canonical_defaults():
+    config = normalize_config({"http": {"accept_language": "en-US"}})
+    settings = http_config(config)
+    assert settings["accept_language"] == "en-US"
+    assert "Mozilla/5.0" in settings["user_agent"]
+
+
+def test_runtime_config_honors_explicit_bond_config(tmp_path: Path, monkeypatch):
+    path = tmp_path / "runtime.json"
+    path.write_text(
+        '{"strategy":"runtime","http":{"user_agent":"RuntimeAgent/1.0"}}',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("BOND_CONFIG", str(path))
+    loaded = load_runtime_config()
+    assert loaded["strategy"] == "runtime"
+    assert loaded["http"]["user_agent"] == "RuntimeAgent/1.0"
