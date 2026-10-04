@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -51,6 +52,8 @@ class CreditWorkflowRequest:
     financial_options: FinancialRefreshOptions
     bank_options: BankRefreshOptions
     output_dir: Path = Path(".")
+    input_frame: pd.DataFrame | None = None
+    source_label: str | None = None
 
 
 @dataclass(frozen=True)
@@ -95,7 +98,7 @@ def load_optional_table(xlsx_path: Path, required_columns: list[str]) -> pd.Data
     if path.suffix.lower() == ".csv":
         try:
             df = pd.read_csv(path, sep=None, engine="python")
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, csv.Error):
             # csv.Sniffer cannot infer a delimiter from valid one-column CSV files.
             df = pd.read_csv(path)
     else:
@@ -116,7 +119,7 @@ def run_credit_workflow(
     ratings = refresh_ratings(ratings, ratings_path, enabled=request.fetch_ratings)
     financials = load_optional_table(financials_path, FINANCIAL_TEMPLATE_COLUMNS)
 
-    deep = load_deep(request.source)
+    deep = DEEP_INPUT_CONTRACT.clean(request.input_frame) if request.input_frame is not None else load_deep(request.source)
     deep, identity_failures = enrich_issuer_identifiers(deep)
     population = classify_population(deep, ratings)
 
@@ -149,8 +152,9 @@ def run_credit_workflow(
     stamp = datetime.now().strftime("%Y-%m-%d")
     excel = request.output_dir / f"bond_credit_analysis_{stamp}.xlsx"
     html = request.output_dir / f"bond_credit_analysis_{stamp}.html"
-    write_excel(analysis, excel, request.source)
-    write_html(analysis, html, request.source)
+    report_source = Path(request.source_label) if request.source_label else request.source
+    write_excel(analysis, excel, report_source)
+    write_html(analysis, html, report_source)
 
     return CreditWorkflowResult(
         analysis=analysis,

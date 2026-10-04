@@ -10,7 +10,8 @@ from typing import Any
 import pandas as pd
 import requests
 
-from app.core.pipeline_common import dated_name, latest, safe_float
+from app.core.pipeline_common import dated_name, safe_float
+from app.core.stage_io import load_stage_frame
 
 MOEX_BASE = "https://iss.moex.com/iss"
 OFZ_BOARD = "TQOB"
@@ -212,8 +213,9 @@ def main() -> None:
     parser.add_argument("--output", help="Выходной XLSX")
     args = parser.parse_args()
 
-    source = Path(args.input) if args.input else latest(Path("."), "bond_search_*.xlsx")
-    bonds = pd.read_excel(source, sheet_name="Результаты поиска")
+    stage_input = load_stage_frame(run_dir=Path("."), module="market_search", pattern="bond_search_*.xlsx", sheet="Результаты поиска", explicit=args.input)
+    bonds = stage_input.frame
+    print(f"Источник market_search: {stage_input.source}")
     curve = fetch_ofz_curve()
     spread = calculate_spreads(bonds, curve)
 

@@ -10,7 +10,8 @@ from urllib.parse import quote
 import pandas as pd
 import requests
 
-from app.core.pipeline_common import dated_name, latest, safe_float
+from app.core.pipeline_common import dated_name, safe_float
+from app.core.stage_io import load_stage_frame
 
 MOEX = "https://iss.moex.com/iss"
 
@@ -82,8 +83,9 @@ def main() -> None:
     parser.add_argument("--output")
     args = parser.parse_args()
     root = Path(".")
-    source = Path(args.input) if args.input else latest(root, "bond_search_*.xlsx")
-    df = pd.read_excel(source, sheet_name="Результаты поиска")
+    stage_input = load_stage_frame(run_dir=root, module="market_search", pattern="bond_search_*.xlsx", sheet="Результаты поиска", explicit=args.input)
+    df = stage_input.frame
+    print(f"Источник market_search: {stage_input.source}")
     result = []
     for index, secid in enumerate(df["Код ценной бумаги"].dropna().astype(str).unique(), 1):
         print(f"[{index}] cashflow {secid}")

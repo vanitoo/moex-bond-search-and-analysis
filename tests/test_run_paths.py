@@ -26,3 +26,15 @@ def test_analysis_run_prefers_directory_with_decisions(tmp_path: Path):
     newer_without.mkdir(parents=True)
 
     assert latest_analysis_run(tmp_path) == with_decisions
+
+
+def test_new_run_dir_uses_unique_suffix_for_same_day(tmp_path: Path):
+    from app.core.run_paths import new_run_dir
+    first = new_run_dir(tmp_path, "2026_10_04")
+    first.mkdir(parents=True)
+    second = new_run_dir(tmp_path, "2026_10_04")
+    second.mkdir(parents=True)
+    third = new_run_dir(tmp_path, "2026_10_04")
+    assert first.name == "bond_2026_10_04"
+    assert second.name == "bond_2026_10_04_001"
+    assert third.name == "bond_2026_10_04_002"

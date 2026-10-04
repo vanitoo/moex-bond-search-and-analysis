@@ -4,3 +4,4 @@ openpyxl
 humanize
 emoji
 feedparser
+beautifulsoup4
