@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from app.core.process_runner import entrypoint_command, run_command
+from app.core.data_quality import eligible_secids, load_quality_report, print_quality_summary
 from app.core.project_paths import GUI_CONFIG, PROJECT_ROOT, RUNS_ROOT, VIRTUAL_PORTFOLIOS_ROOT
 from app.core.run_paths import iter_analysis_dirs, latest_analysis_run
 from app.portfolio.portfolio_allocator import allocate_budget
@@ -142,6 +143,19 @@ def invest_command(args: argparse.Namespace) -> None:
 
     _, bonds = _load_master(run_dir)
     candidates = _candidate_secids(run_dir)
+    quality = load_quality_report(run_dir)
+    if quality is None:
+        raise RuntimeError("Для выбранного анализа нет Data Quality report. Выполните новый pipeline 1–10.")
+    print_quality_summary(quality)
+    allowed = eligible_secids(quality, allow_degraded=args.allow_degraded)
+    blocked = [secid for secid in candidates if secid not in allowed]
+    candidates = [secid for secid in candidates if secid in allowed]
+    if blocked:
+        print(f"Data Quality Gate исключил из автопокупки: {len(blocked)}")
+        for secid in blocked:
+            print(f"  🔴 {secid}")
+    if not candidates:
+        raise RuntimeError("После Data Quality Gate не осталось бумаг для автоматической покупки.")
     previous_cash = cash_balance(read_ledger(LEDGER_ROOT, args.name))
     available = previous_cash + args.amount
     if available <= 0:
@@ -219,6 +233,7 @@ def main() -> None:
     invest.add_argument("--max-age-hours", type=float, default=12.0, help="Максимальный возраст готового анализа для повторного использования")
     invest.add_argument("--config", default=str(GUI_CONFIG))
     invest.add_argument("--run-dir")
+    invest.add_argument("--allow-degraded", action="store_true", help="Разрешить автопокупку бумаг со статусом DEGRADED; по умолчанию только COMPLETE")
     invest.add_argument("--max-position-percent", type=float, default=20.0)
     invest.add_argument("--max-issuer-percent", type=float, default=25.0)
     invest.add_argument("-y", "--yes", action="store_true", help="Применить план без интерактивного подтверждения")
