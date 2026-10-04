@@ -92,7 +92,14 @@ def load_optional_table(xlsx_path: Path, required_columns: list[str]) -> pd.Data
     path = csv_path if csv_path.exists() else xlsx_path
     if not path.exists():
         return pd.DataFrame(columns=required_columns)
-    df = pd.read_csv(path, sep=None, engine="python") if path.suffix.lower() == ".csv" else pd.read_excel(path)
+    if path.suffix.lower() == ".csv":
+        try:
+            df = pd.read_csv(path, sep=None, engine="python")
+        except (ValueError, TypeError):
+            # csv.Sniffer cannot infer a delimiter from valid one-column CSV files.
+            df = pd.read_csv(path)
+    else:
+        df = pd.read_excel(path)
     for column in required_columns:
         if column not in df.columns:
             df[column] = None
