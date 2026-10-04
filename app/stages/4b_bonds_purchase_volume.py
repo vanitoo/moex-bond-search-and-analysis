@@ -9,7 +9,8 @@ from urllib.parse import quote
 import pandas as pd
 import requests
 
-from app.core.pipeline_common import clean_secid_rows, dated_name, latest, safe_float
+from app.core.pipeline_common import clean_secid_rows, dated_name, safe_float
+from app.core.stage_io import load_stage_frame
 
 MOEX = "https://iss.moex.com/iss"
 
@@ -121,8 +122,9 @@ def main() -> None:
     args = parser.parse_args()
     if not 0 < args.impact_share <= 1:
         raise SystemExit("--impact-share должен быть от 0 до 1")
-    source = Path(args.input) if args.input else latest(Path("."), "bond_search_*.xlsx")
-    df = clean_secid_rows(pd.read_excel(source, sheet_name="Результаты поиска"))
+    stage_input = load_stage_frame(run_dir=Path("."), module="market_search", pattern="bond_search_*.xlsx", sheet="Результаты поиска", explicit=args.input)
+    df = clean_secid_rows(stage_input.frame)
+    print(f"Источник market_search: {stage_input.source}")
     result = []
     for index, secid in enumerate(df["Код ценной бумаги"].astype(str), 1):
         print(f"[{index}] liquidity {secid}")
