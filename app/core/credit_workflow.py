@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -97,7 +98,7 @@ def load_optional_table(xlsx_path: Path, required_columns: list[str]) -> pd.Data
     if path.suffix.lower() == ".csv":
         try:
             df = pd.read_csv(path, sep=None, engine="python")
-        except (ValueError, TypeError):
+        except (ValueError, TypeError, csv.Error):
             # csv.Sniffer cannot infer a delimiter from valid one-column CSV files.
             df = pd.read_csv(path)
     else:
