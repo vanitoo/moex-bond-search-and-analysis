@@ -7,7 +7,7 @@ from typing import Any
 
 from app.core.run_store import RunStore
 
-REQUIRED_SOURCES = ("market_search", "cashflow", "liquidity", "ofz_spread", "credit", "decision")
+REQUIRED_SOURCES = ("market_search", "cashflow", "liquidity", "ofz_spread", "analysis", "deep_analysis", "credit", "decision")
 OPTIONAL_SOURCES = ("news",)
 
 # These codes describe missing/partial data. Business rejection codes such as
@@ -22,6 +22,8 @@ REPAIR_STAGE = {
     "news": 3,  # rerun downloader before news analysis
     "liquidity": 5,
     "ofz_spread": 6,
+    "analysis": 7,
+    "deep_analysis": 8,
     "credit": 9,
     "decision": 10,
 }
