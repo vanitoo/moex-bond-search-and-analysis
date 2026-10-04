@@ -14,9 +14,9 @@ import streamlit.components.v1 as components
 from app.gui.selection_profiles_ui import search_criteria_editor as render_search_criteria_editor
 
 from app.core.master_dataset import build_master_dataset
-from app.core.project_paths import DEFAULT_CONFIG, PROJECT_ROOT, RUNS_ROOT
+from app.core.process_runner import entrypoint_command, popen_command
+from app.core.project_paths import DEFAULT_CONFIG, GUI_CONFIG, PROJECT_ROOT, RUNS_ROOT
 from app.core.value_utils import deep_get
-from app.core.runtime_env import build_subprocess_env
 from app.core.stage_registry import GUI_MODULES, MODULE_DEPENDENCIES, RESULT_FILES as STAGE_RESULT_FILES
 
 TODAY_RUN = RUNS_ROOT / f"bond_{datetime.now():%Y_%m_%d}"
@@ -139,15 +139,13 @@ def module_state(run_dir: Path, key: str) -> dict[str, Any]:
 
 
 def save_gui_config(config: dict[str, Any]) -> Path:
-    path = PROJECT_ROOT / "configs" / "gui_active.json"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
-    return path
+    GUI_CONFIG.parent.mkdir(parents=True, exist_ok=True)
+    GUI_CONFIG.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+    return GUI_CONFIG
 
 
 def config_editor() -> dict[str, Any]:
-    active = PROJECT_ROOT / "configs" / "gui_active.json"
-    source = active if active.exists() else DEFAULT_CONFIG
+    source = GUI_CONFIG if GUI_CONFIG.exists() else DEFAULT_CONFIG
     config = load_json(source, {"strategy": "balanced", "modules": {}})
     modules = config.setdefault("modules", {})
     with st.expander("Настройка модулей", expanded=False):
@@ -239,15 +237,26 @@ def config_editor() -> dict[str, Any]:
 def execute_modules(run_dir: Path, modules: list[str], config_path: Path, refresh_ratings: bool) -> tuple[int, str]:
     run_dir.mkdir(parents=True, exist_ok=True)
     python_executable = project_python()
-    command = [str(python_executable), str(PROJECT_ROOT / "bondlab.py"), "pipeline", "--run-dir", str(run_dir), "--config", str(config_path)]
+    args = ["pipeline", "--run-dir", str(run_dir), "--config", str(config_path)]
     for key in modules:
-        command += ["--only-module", key]
+        args += ["--only-module", key]
     if refresh_ratings:
-        command.append("--refresh-ratings")
-    child_env = build_subprocess_env(PROJECT_ROOT)
-    process = subprocess.Popen(
-        command, cwd=PROJECT_ROOT, env=child_env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, encoding="utf-8", errors="replace", bufsize=1,
+        args.append("--refresh-ratings")
+    command = entrypoint_command(
+        PROJECT_ROOT / "bondlab.py",
+        args,
+        python=python_executable,
+    )
+    process = popen_command(
+        command,
+        cwd=PROJECT_ROOT,
+        project_root=PROJECT_ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        bufsize=1,
     )
     placeholder = st.empty()
     lines: list[str] = [f"Python pipeline: {python_executable}"]
