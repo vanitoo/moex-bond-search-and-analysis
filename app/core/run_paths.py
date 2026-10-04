@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Iterable
 
 
-RUN_GLOB = "bond_????_??_??"
+RUN_GLOB = "bond_????_??_??*"
 
 
 def analysis_roots(project_root: Path) -> tuple[Path, Path]:
