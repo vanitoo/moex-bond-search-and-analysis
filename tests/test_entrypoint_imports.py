@@ -65,6 +65,7 @@ def test_credit_entrypoint_error_path_reports_original_error(tmp_path: Path):
             "--no-fetch-bank-metrics",
         ],
         cwd=tmp_path,
+        env=_runtime_env(),
         text=True,
         capture_output=True,
         timeout=30,
