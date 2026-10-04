@@ -271,3 +271,26 @@ git push origin dev
 `bondlab.py invest` по умолчанию допускает к автоматическому распределению только `COMPLETE`. Бумаги `INCOMPLETE` блокируются всегда. `--allow-degraded` можно использовать для осознанного допуска `DEGRADED`.
 
 Консоль после pipeline и перед invest показывает сводку 🟢 COMPLETE / 🟡 DEGRADED / 🔴 INCOMPLETE.
+
+
+### Auto Repair неполных данных
+
+Data Quality отделяет качество загрузки от инвестиционного результата. Например, `FINAL_REJECT`, плохая ликвидность или высокий спред — это валидные данные и не считаются поломкой pipeline.
+
+Для проблем загрузки сохраняется признак `retryable`. К временно повторяемым относятся ошибки процесса/выходного результата, неполный cashflow и недоступный стакан. Стабильные факты вроде отсутствия найденных новостей не перезапрашиваются бесконечно.
+
+Починить текущий run автоматически:
+
+```powershell
+.\.venv\Scripts\python.exe .\bondlab.py repair --run-dir .\runs\bond_2026_10_05
+```
+
+Repair находит самый ранний retryable stage и повторяет только его и downstream stages до 10 **в том же run_id**. Новая папка `_001` не создаётся. По умолчанию одна попытка; `--attempts 2` разрешает две.
+
+Принудительно повторить конкретный участок:
+
+```powershell
+.\.venv\Scripts\python.exe .\bondlab.py repair --run-dir .\runs\bond_2026_10_05 --module credit
+```
+
+`invest` запускает Auto Repair автоматически перед allocator. Отключить это поведение можно через `--no-auto-repair`; число попыток задаётся `--repair-attempts N`.
