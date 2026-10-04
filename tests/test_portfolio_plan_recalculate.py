@@ -1,4 +1,4 @@
-from portfolio_plan import recalculate_allocation_plan
+from app.portfolio.portfolio_plan import recalculate_allocation_plan
 
 
 def test_recalculate_plan_updates_amounts_and_reserve():
