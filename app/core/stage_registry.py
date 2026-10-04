@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -133,6 +134,14 @@ MODULE_DESCRIPTIONS["1_bonds_market_scanner_v2.py"] = (
     "V2: пакетная загрузка рынка, локальная фильтрация, дисковый кэш и ограниченный параллелизм."
 )
 
+
+
+def runtime_module_for_script(script_name: str) -> str:
+    """Return the package module used to execute a registered stage script."""
+
+    if script_name not in BY_SCRIPT:
+        raise KeyError(f"Unknown stage script: {script_name}")
+    return f"app.stages.{Path(script_name).stem}"
 
 def stage_by_number(number: int) -> PipelineStage:
     if number < 1 or number > len(PIPELINE_STAGES):
