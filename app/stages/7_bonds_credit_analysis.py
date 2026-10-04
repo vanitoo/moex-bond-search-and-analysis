@@ -10,7 +10,7 @@ from app.core.credit_engine import (
     rating_direction, row_match_score, safe_float,
 )
 from app.core.credit_sources import BankRefreshOptions, FinancialRefreshOptions
-from app.core.stage_io import load_stage_frame
+from app.core.stage_io import load_stage_frame, publish_stage_frame
 from app.core.credit_workflow import (
     FINANCIAL_TEMPLATE_COLUMNS, RATING_TEMPLATE_COLUMNS, REQUIRED_DEEP_COLUMNS,
     create_templates, find_latest_deep_file, load_deep, load_optional_table,
@@ -62,6 +62,7 @@ def main() -> int:
             ),
             progress=lambda index, total, name, secid: print(f"[{index}/{total}] Кредитный анализ: {name} ({secid})"),
         )
+        publish_stage_frame("credit", result.analysis)
         print(f"ИНН эмитентов определён через MOEX ISS: {result.identified_issuers}/{len(result.analysis)}")
         if result.identity_failures:
             print("Внимание: ИНН не найден для: " + ", ".join(result.identity_failures))
