@@ -16,7 +16,7 @@ def test_v1_search_exposes_dataframe_before_report_export(tmp_path: Path, monkey
         volume=10000,
         yield_=18.2,
         duration=12.0,
-        coupon_months=[],
+        payments_data={},
     )
     monkeypatch.setattr(app.moex, "search_bonds", lambda conditions: [bond])
     monkeypatch.chdir(tmp_path)
