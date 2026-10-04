@@ -7,6 +7,7 @@ from app.core.stage_registry import (
     PIPELINE_STAGE_SCRIPTS,
     RESULT_FILES,
     resolve_market_script,
+    runtime_module_for_script,
 )
 
 
@@ -37,3 +38,8 @@ def test_gui_and_pipeline_share_logical_module_keys():
     assert MODULE_DEPENDENCIES["credit"] == ("deep_analysis",)
     assert RESULT_FILES["decision"] == "bond_decisions_*.xlsx"
     assert RESULT_FILES["news_search"] == "news/**/*"
+
+
+def test_registered_stage_has_canonical_runtime_module():
+    assert runtime_module_for_script("7_bonds_credit_analysis.py") == "app.stages.7_bonds_credit_analysis"
+    assert runtime_module_for_script("1_bonds_market_scanner_v2.py") == "app.stages.1_bonds_market_scanner_v2"
