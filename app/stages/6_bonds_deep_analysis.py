@@ -9,11 +9,13 @@ import pandas as pd
 
 from app.core.deep_analysis import analyze_deep_row, evaluate, is_yes
 from app.core.pipeline_common import latest
+from app.core.stage_contract import FrameContract
 
 REQUIRED = {
     "Полное наименование", "Код ценной бумаги", "Доходность",
     "Оценка, 0-100", "Рекомендация", "Риски и ограничения",
 }
+INPUT_CONTRACT = FrameContract.from_columns("stage 6 / deep analysis", REQUIRED)
 
 
 def main() -> None:
@@ -23,9 +25,7 @@ def main() -> None:
     args = parser.parse_args()
     source = Path(args.input) if args.input else latest(Path("."), "bond_analysis_*.xlsx")
     df = pd.read_excel(source, sheet_name="Анализ")
-    missing = REQUIRED.difference(df.columns)
-    if missing:
-        raise ValueError("Во входном файле нет колонок: " + ", ".join(sorted(missing)))
+    INPUT_CONTRACT.validate(df)
     result = pd.DataFrame([evaluate(row) for _, row in df.iterrows()]).sort_values("Итоговый балл", ascending=False)
     out = Path(args.output_dir); out.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y-%m-%d")
