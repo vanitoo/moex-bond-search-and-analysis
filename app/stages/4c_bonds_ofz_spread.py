@@ -11,7 +11,7 @@ import pandas as pd
 import requests
 
 from app.core.pipeline_common import dated_name, safe_float
-from app.core.stage_io import load_stage_frame
+from app.core.stage_io import load_stage_frame, publish_stage_frame
 
 MOEX_BASE = "https://iss.moex.com/iss"
 OFZ_BOARD = "TQOB"
@@ -218,6 +218,7 @@ def main() -> None:
     print(f"Источник market_search: {stage_input.source}")
     curve = fetch_ofz_curve()
     spread = calculate_spreads(bonds, curve)
+    publish_stage_frame("ofz_spread", spread)
 
     output = Path(args.output or dated_name("bond_ofz_spread", "xlsx"))
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
