@@ -7,7 +7,7 @@ from typing import Any
 
 import pandas as pd
 
-from app.core.configuration import is_enabled, load_config, module_config
+from app.core.configuration import module_config
 from app.core.pipeline_common import clean_secid_rows, latest, normalize, safe_float
 from app.core.stage_registry import BY_SCRIPT, MODULES, ModuleSpec
 
