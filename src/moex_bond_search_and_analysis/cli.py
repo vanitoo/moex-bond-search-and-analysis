@@ -3,7 +3,7 @@ from moex_bond_search_and_analysis.schemas import SearchByCriteriaConditions
 from moex_bond_search_and_analysis.utils import setup_encoding
 
 
-def start(script_number: None | int = None, search_conditions: SearchByCriteriaConditions | None = None):
+def start(script_number: None | int = None, search_conditions: SearchByCriteriaConditions | None = None, *, search_result_callback=None):
     if script_number is None:
         script_number = int(input(
             "1 - Поиск облигаций по критериям\n"
@@ -16,7 +16,7 @@ def start(script_number: None | int = None, search_conditions: SearchByCriteriaC
     app = App()
 
     if script_number == 1:
-        app.search_by_criteria(search_conditions=search_conditions)
+        app.search_by_criteria(search_conditions=search_conditions, result_callback=search_result_callback)
     elif script_number == 2:
         app.search_coupons()
     elif script_number == 3:
