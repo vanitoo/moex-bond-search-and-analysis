@@ -4,6 +4,10 @@ bonds*
 data/
 reports/
 
+# Local legacy/scratch directories (not part of runtime)
+test_v1/
+test_v2/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

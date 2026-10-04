@@ -75,7 +75,8 @@ src/
                         # интеграции MOEX, новости, рейтинги, ФНС, ЦБ
 
 configs/                # конфигурации
-runs/                   # результаты полных анализов bond_YYYY_MM_DD (gitignored)\ndata/                   # кэши и постоянные локальные данные
+runs/                   # результаты полных анализов bond_YYYY_MM_DD[_NNN] (gitignored)
+data/                   # SQLite bondlab.db, кэши и постоянные локальные данные
 scripts/                # установка/планировщик
 tools/                  # отдельные сервисные утилиты
 tests/                  # тесты
@@ -184,3 +185,34 @@ pythonpath = [".", "src"]
 - Структура покрыта `tests/test_configuration.py`.
 
 Следующий рефакторинг: отделить внешние интеграции (`MOEX`, рейтинги, ФНС, ЦБ, новости) от бизнес-слоя ещё жёстче — через единый слой providers/adapters, чтобы `app/core` не импортировал конкретные сетевые реализации напрямую.
+
+
+## Persistence после P1 SQLite-first
+
+Внутренний источник состояния pipeline — `data/bondlab.db`.
+
+- Каждый запуск имеет отдельный `run_id`: `bond_YYYY_MM_DD`, затем `_001`, `_002` и т.д.
+- Этапы 1–10 передают нормализованные результаты через DataFrame/SQLite.
+- Stage 1 V1 и V2 публикуют `market_search` непосредственно в SQLite; Excel больше не нужен как мост к Stage 2.
+- Stages 2–7 читают входы в порядке: explicit input -> SQLite текущего run -> legacy XLSX fallback.
+- Результаты stages публикуются в SQLite до формирования XLSX/HTML.
+- `collect_stage()` читает SQLite и обращается к XLSX только для совместимости со старыми/non-publishing запусками.
+- XLSX, HTML и JSON — пользовательские отчёты/экспорт, а не внутренний API между этапами.
+- Сырые новостные документы остаются файловыми provider artifacts; нормализованный результат news хранится в SQLite.
+
+## Локальные каталоги
+
+Не являются исходным кодом и могут отсутствовать после чистого clone:
+- `.venv/` — локальное Python-окружение; удалить можно, но затем нужно заново установить зависимости.
+- `__pycache__/`, `.pytest_cache/`, `.coverage` — временные Python/pytest/coverage данные; безопасно удалять.
+- `bond_YYYY_MM_DD*/` в корне — legacy результаты старых запусков; новые запуски создаются в `runs/`. После резервной копии нужных отчётов их можно удалить.
+- `reports/`, `runs/`, `data/` — runtime data, gitignored; удалять только если не нужны отчёты, портфельные/кэшированные данные и SQLite history.
+- `test_v1/`, `test_v2/` — локальные старые test/scratch workspaces, не часть runtime и теперь явно gitignored.
+
+Активные каталоги, которые удалять нельзя:
+- `app/` — application layer, pipeline, GUI, portfolio и core.
+- `src/moex_bond_search_and_analysis/` — активный пакет интеграций и legacy-compatible MOEX implementation.
+- `configs/`, `tests/`, `scripts/`, `tools/`, `docs/` — конфигурация, тесты, сервисные команды и документация.
+- `.github/` — CI.
+- `archive/` — если присутствует локально, это только legacy-архив; runtime не должен от него зависеть.
+- `.agents/`, `.claude/` — локальные настройки/инструкции AI-инструментов, если они созданы пользователем; к runtime приложения отношения не имеют.

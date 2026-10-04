@@ -7,6 +7,7 @@ import argparse
 from pathlib import Path
 
 from app.core.project_paths import PROJECT_ROOT
+from app.core.stage_io import publish_stage_frame
 from moex_bond_search_and_analysis.cli import start
 from moex_bond_search_and_analysis.schemas import SearchByCriteriaConditions
 
@@ -53,7 +54,7 @@ def main() -> None:
         bond_volume_more=args.bond_volume_more,
         offer_yes_no="ДА" if args.require_known_coupons else "НЕТ",
     )
-    start(1, search_conditions=search_conditions)
+    start(1, search_conditions=search_conditions, search_result_callback=lambda frame: publish_stage_frame("market_search", frame))
 
 
 if __name__ == "__main__":

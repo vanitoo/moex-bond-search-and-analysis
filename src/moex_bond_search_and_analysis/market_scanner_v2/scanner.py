@@ -44,7 +44,7 @@ def _enrich(row: dict[str, Any], client: MoexClient) -> dict[str, Any]:
     return {**row, "BOARDID": board, **history, **cashflow}
 
 
-def run_scan(config: ScannerConfig, project_root: Path) -> Path:
+def scan_market(config: ScannerConfig, project_root: Path) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, Any]]:
     config.validate()
     log_file = config.log_file or Path.cwd() / "market_scanner_v2.log"
     setup_logging(config.log_level, log_file)
@@ -73,7 +73,27 @@ def run_scan(config: ScannerConfig, project_root: Path) -> Path:
     all_rows = pd.DataFrame(output_row(row) for row in enriched)
     result, rejected = split_accepted_rejected(all_rows, config)
     elapsed = time.perf_counter() - started
-    export_excel(output, result, rejected, config, len(market), len(candidates), elapsed)
-    LOGGER.info("V2 завершён за %.1f сек. Найдено: %s; исключено: %s", elapsed, len(result), len(rejected))
+    metadata = {
+        "market_count": len(market),
+        "candidate_count": len(candidates),
+        "elapsed": elapsed,
+    }
+    LOGGER.info("V2 сканирование завершено за %.1f сек. Найдено: %s; исключено: %s", elapsed, len(result), len(rejected))
+    return result, rejected, metadata
+
+
+def run_scan(config: ScannerConfig, project_root: Path) -> Path:
+    """Compatibility/report wrapper around the DataFrame-producing scanner."""
+    output = config.output or Path.cwd() / f"bond_search_{date.today():%Y-%m-%d}.xlsx"
+    result, rejected, metadata = scan_market(config, project_root)
+    export_excel(
+        output,
+        result,
+        rejected,
+        config,
+        metadata["market_count"],
+        metadata["candidate_count"],
+        metadata["elapsed"],
+    )
     LOGGER.info("Результат: %s", output)
     return output

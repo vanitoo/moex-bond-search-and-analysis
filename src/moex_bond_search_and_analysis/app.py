@@ -2,7 +2,7 @@ from datetime import datetime
 import re
 import threading
 import time
-from typing import Any
+from typing import Any, Callable
 
 import emoji
 import pandas as pd
@@ -73,7 +73,11 @@ class App:
             )
 
     @measure_method_duration
-    def search_by_criteria(self, search_conditions: SearchByCriteriaConditions | None = None):
+    def search_by_criteria(
+        self,
+        search_conditions: SearchByCriteriaConditions | None = None,
+        result_callback: Callable[[pd.DataFrame], None] | None = None,
+    ) -> pd.DataFrame:
         if search_conditions is None:
             self.log.info("Критерии поиска не были переданы, используются значения по умолчанию.")
             search_conditions = SearchByCriteriaConditions()
@@ -97,6 +101,22 @@ class App:
             live_thread.join(timeout=2)
 
         bonds = moex_search_bonds_result or []
+        result_frame = pd.DataFrame(
+            [
+                {
+                    "Полное наименование": bond.name,
+                    "Код ценной бумаги": bond.secid,
+                    "Нужна квалификация?": bond.is_qualified_investors,
+                    "Цена, %": bond.price,
+                    "Объем сделок с 15 дней, шт.": bond.volume,
+                    "Доходность": bond.yield_,
+                    "Дюрация, месяцев": bond.duration,
+                }
+                for bond in bonds
+            ]
+        )
+        if result_callback is not None:
+            result_callback(result_frame)
         report_date = datetime.now().strftime("%Y-%m-%d")
         final_html_filename = f"bond_search_{report_date}.html"
 
@@ -126,6 +146,7 @@ class App:
             final_filename=final_html_filename,
         )
         self.log.info("✅ Живой отчёт обновлён: поиск завершён.")
+        return result_frame
 
     @measure_method_duration
     def search_coupons(self):
