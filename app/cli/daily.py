@@ -1,24 +1,17 @@
 from __future__ import annotations
 
 import argparse
-import subprocess
-import sys
 from datetime import datetime
 from pathlib import Path
 
+from app.core.process_runner import entrypoint_command, module_command, run_command
 from app.core.project_paths import PROJECT_ROOT
 from app.core.run_paths import latest_analysis_run
-from app.core.runtime_env import build_subprocess_env
 
 
 def _run(command: list[str], cwd: Path) -> None:
     print("\n> " + " ".join(command))
-    subprocess.run(
-        command,
-        cwd=cwd,
-        check=True,
-        env=build_subprocess_env(cwd),
-    )
+    run_command(command, cwd=cwd, project_root=PROJECT_ROOT)
 
 
 def latest_analysis_dir(root: Path) -> Path | None:
@@ -53,7 +46,6 @@ def main() -> None:
     args = parser.parse_args()
 
     root = PROJECT_ROOT
-    python = sys.executable
     baseline_kind = "полный анализ"
     if args.run_dir:
         run_dir = Path(args.run_dir).expanduser().resolve()
@@ -73,46 +65,56 @@ def main() -> None:
     report_dir = root / "reports"
 
     if args.mode == "full":
-        command = [
-            python, str(root / "bondlab.py"), "pipeline",
-            "--from-stage", "1",
-            "--to-stage", "10",
-            "--run-dir", str(run_dir),
-            "--config", str(config),
-            "--portfolio", args.portfolio,
-        ]
+        command = entrypoint_command(
+            root / "bondlab.py",
+            [
+                "pipeline",
+                "--from-stage", "1",
+                "--to-stage", "10",
+                "--run-dir", str(run_dir),
+                "--config", str(config),
+                "--portfolio", args.portfolio,
+            ],
+        )
         if args.refresh_ratings:
             command.append("--refresh-ratings")
         _run(command, root)
     else:
         run_dir.mkdir(parents=True, exist_ok=True)
         if not args.skip_portfolio_refresh:
-            _run([
-                python, "-m", "app.portfolio.portfolio_daily_refresh",
+            _run(module_command(
+                "app.portfolio.portfolio_daily_refresh",
+                [
+                    "--name", args.portfolio,
+                    "--run-dir", str(run_dir),
+                    "--portfolio-dir", str(portfolio_dir),
+                    "--config", str(config),
+                ],
+            ), root)
+
+        _run(module_command(
+            "app.portfolio.portfolio_monitor",
+            [
+                "daily",
                 "--name", args.portfolio,
                 "--run-dir", str(run_dir),
                 "--portfolio-dir", str(portfolio_dir),
-                "--config", str(config),
-            ], root)
+                "--history-dir", str(history_dir),
+                "--report-dir", str(report_dir),
+            ],
+        ), root)
 
-        _run([
-            python, "-m", "app.portfolio.portfolio_monitor", "daily",
+    _run(module_command(
+        "app.portfolio.daily_actions",
+        [
             "--name", args.portfolio,
             "--run-dir", str(run_dir),
             "--portfolio-dir", str(portfolio_dir),
             "--history-dir", str(history_dir),
             "--report-dir", str(report_dir),
-        ], root)
-
-    _run([
-        python, "-m", "app.portfolio.daily_actions",
-        "--name", args.portfolio,
-        "--run-dir", str(run_dir),
-        "--portfolio-dir", str(portfolio_dir),
-        "--history-dir", str(history_dir),
-        "--report-dir", str(report_dir),
-        "--amount", str(args.amount),
-    ], root)
+            "--amount", str(args.amount),
+        ],
+    ), root)
 
     print("\nАвтопилот завершён")
     print(f"Режим: {args.mode}")
