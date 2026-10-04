@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 import subprocess
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -12,10 +11,10 @@ import pandas as pd
 
 import requests
 
+from app.core.process_runner import module_command, run_command
 from app.core.project_paths import PROJECT_ROOT
 
 from app.core.pipeline_common import latest, safe_float
-from app.core.runtime_env import build_subprocess_env
 from app.portfolio.portfolio_store import load_portfolio
 from moex_bond_search_and_analysis.rating_signal import build_rating_signal, load_rating_events
 
@@ -24,12 +23,7 @@ MOEX = "https://iss.moex.com/iss"
 
 def _run(command: list[str], cwd: Path) -> None:
     print("\n> " + " ".join(command))
-    subprocess.run(
-        command,
-        cwd=cwd,
-        check=True,
-        env=build_subprocess_env(PROJECT_ROOT),
-    )
+    run_command(command, cwd=cwd, project_root=PROJECT_ROOT)
 
 
 def _rows(payload: dict[str, Any], block: str) -> list[dict[str, Any]]:
@@ -245,32 +239,38 @@ def main() -> None:
         except (OSError, json.JSONDecodeError):
             pass
 
-    news_search_cmd = [
-        sys.executable, "-m", "app.stages.3a_bonds_news_search",
-        "--input", str(portfolio_input),
-        "--providers", providers,
-        "--proxy-env", proxy_env,
-        "--delay", "0.25",
-    ]
+    news_search_cmd = module_command(
+        "app.stages.3a_bonds_news_search",
+        [
+            "--input", str(portfolio_input),
+            "--providers", providers,
+            "--proxy-env", proxy_env,
+            "--delay", "0.25",
+        ],
+    )
     if use_proxy:
         news_search_cmd.append("--use-proxy")
     _run(news_search_cmd, run_dir)
 
     news_output = run_dir / f"bond_news_daily_{stamp}.xlsx"
-    _run([
-        sys.executable, "-m", "app.stages.3b_bonds_news",
-        "--input", str(portfolio_input),
-        "--news-dir", str(run_dir),
-        "--output", str(news_output),
-    ], run_dir)
+    _run(module_command(
+        "app.stages.3b_bonds_news",
+        [
+            "--input", str(portfolio_input),
+            "--news-dir", str(run_dir),
+            "--output", str(news_output),
+        ],
+    ), run_dir)
 
     spread_output = run_dir / f"bond_ofz_spread_daily_{stamp}.xlsx"
     try:
-        _run([
-            sys.executable, "-m", "app.stages.4c_bonds_ofz_spread",
-            "--input", str(portfolio_input),
-            "--output", str(spread_output),
-        ], run_dir)
+        _run(module_command(
+            "app.stages.4c_bonds_ofz_spread",
+            [
+                "--input", str(portfolio_input),
+                "--output", str(spread_output),
+            ],
+        ), run_dir)
     except subprocess.CalledProcessError as exc:
         print(f"⚠️ Не удалось обновить спред к ОФЗ: {exc}. Мониторинг продолжится с последними доступными данными.")
 
