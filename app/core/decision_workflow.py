@@ -12,6 +12,7 @@ from app.core.configuration import is_enabled
 from app.core.decision_engine import annotate_shortlist_reasons, decide
 from app.core.pipeline_common import clean_secid_rows, latest, merge_by_secid
 from app.core.stage_registry import PIPELINE_STAGES
+from app.core.run_store import RunStore, run_id_for
 from app.portfolio.portfolio_shortlist import annotate_decisions, write_shortlist
 from moex_bond_search_and_analysis.rating_signal import load_rating_events
 
@@ -22,6 +23,8 @@ class DecisionWorkflowRequest:
     output_dir: Path
     config: dict[str, Any]
     explicit_input: str | None = None
+    store: RunStore | None = None
+    run_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -37,7 +40,19 @@ class DecisionWorkflowResult:
     rating_event_count: int
 
 
-def load_optional(root: Path, pattern: str, sheet: str | int = 0) -> pd.DataFrame:
+def load_optional(
+    root: Path,
+    pattern: str,
+    sheet: str | int = 0,
+    *,
+    store: RunStore | None = None,
+    run_id: str | None = None,
+    module: str | None = None,
+) -> pd.DataFrame:
+    if store is not None and run_id and module:
+        stored = store.read_frame(run_id, module)
+        if stored is not None:
+            return clean_secid_rows(stored)
     path = latest(root, pattern, required=False)
     if not path:
         return pd.DataFrame(columns=["Код ценной бумаги"])
@@ -47,7 +62,14 @@ def load_optional(root: Path, pattern: str, sheet: str | int = 0) -> pd.DataFram
         return clean_secid_rows(pd.read_excel(path, sheet_name=0))
 
 
-def choose_base(root: Path, config: dict[str, Any], explicit: str | None) -> tuple[pd.DataFrame, str]:
+def choose_base(
+    root: Path,
+    config: dict[str, Any],
+    explicit: str | None,
+    *,
+    store: RunStore | None = None,
+    run_id: str | None = None,
+) -> tuple[pd.DataFrame, str]:
     if explicit:
         path = Path(explicit)
         return clean_secid_rows(pd.read_excel(path, sheet_name=0)), path.name
@@ -60,6 +82,10 @@ def choose_base(root: Path, config: dict[str, Any], explicit: str | None) -> tup
     for key, pattern, sheet in candidates:
         if not is_enabled(config, key):
             continue
+        if store is not None and run_id:
+            stored = store.read_frame(run_id, key)
+            if stored is not None:
+                return clean_secid_rows(stored), f"sqlite:{run_id}:{key}"
         path = latest(root, pattern, required=False)
         if path:
             try:
@@ -105,7 +131,11 @@ def _write_outputs(
 
 def run_decision_workflow(request: DecisionWorkflowRequest) -> DecisionWorkflowResult:
     enabled = {stage.key for stage in PIPELINE_STAGES if is_enabled(request.config, stage.key)}
-    df, source_name = choose_base(request.root, request.config, request.explicit_input)
+    run_id = request.run_id or run_id_for(request.root)
+    df, source_name = choose_base(
+        request.root, request.config, request.explicit_input,
+        store=request.store, run_id=run_id,
+    )
     rating_events = load_rating_events(request.root)
 
     optional = [
@@ -119,7 +149,10 @@ def run_decision_workflow(request: DecisionWorkflowRequest) -> DecisionWorkflowR
     ]
     for key, pattern, sheet in optional:
         if key in enabled:
-            df = merge_by_secid(df, load_optional(request.root, pattern, sheet))
+            df = merge_by_secid(df, load_optional(
+                request.root, pattern, sheet,
+                store=request.store, run_id=run_id, module=key,
+            ))
 
     result = pd.DataFrame([
         decide(row, enabled, source_name, rating_events)

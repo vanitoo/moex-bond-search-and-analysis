@@ -11,6 +11,7 @@ from app.core.master_dataset import build_master_dataset
 from app.core.project_paths import PROJECT_ROOT
 from app.core.process_runner import run_module
 from app.core.run_paths import latest_pipeline_run, new_run_dir
+from app.core.run_store import RunStore, default_store_path, run_id_for
 from app.core.stage_arguments import (
     DEFAULT_RATINGS_CACHE_HOURS,
     actual_script,
@@ -127,6 +128,9 @@ def main() -> None:
         raise SystemExit("Не выбран ни один модуль")
     run_dir = resolve_run_dir(project_root, args.run_dir, min(stage.number for stage in stages))
     run_dir.mkdir(parents=True, exist_ok=True)
+    run_id = run_id_for(run_dir)
+    run_store = RunStore(default_store_path(project_root))
+    run_store.ensure_run(run_id, run_dir, strategy=str(config.get("strategy") or ""))
 
     trace_dir = run_dir / "decisions"
     if args.reset_trace and trace_dir.exists():
@@ -189,10 +193,10 @@ def main() -> None:
                 )
                 continue
             raise
-        collect_stage(run_dir, spec, config)
+        collect_stage(run_dir, spec, config, store=run_store, run_id=run_id)
 
     try:
-        master_path = build_master_dataset(run_dir)
+        master_path = build_master_dataset(run_dir, store=run_store, run_id=run_id)
         print(f"\nЕдиный набор данных GUI обновлён: {master_path}")
     except Exception as exc:
         print(f"\n⚠ Не удалось собрать bonds_master.json: {exc}")
