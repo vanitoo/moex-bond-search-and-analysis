@@ -22,14 +22,22 @@ def _is_complete_analysis(run_dir: Path) -> bool:
     return (decisions / "bonds_master.json").exists() and (decisions / "portfolio_shortlist.json").exists()
 
 
-def _fresh_analysis_run(max_age_hours: float) -> Path | None:
+def _analysis_mtime(run_dir: Path) -> float:
+    decisions = run_dir / "decisions"
+    return max(
+        (decisions / "bonds_master.json").stat().st_mtime,
+        (decisions / "portfolio_shortlist.json").stat().st_mtime,
+    )
+
+
+def _fresh_analysis_run(max_age_hours: float, project_root: Path = PROJECT_ROOT) -> Path | None:
     cutoff = datetime.now() - timedelta(hours=max_age_hours)
     candidates = [
-        path for path in iter_analysis_dirs(PROJECT_ROOT)
+        path for path in iter_analysis_dirs(project_root)
         if _is_complete_analysis(path)
-        and datetime.fromtimestamp(path.stat().st_mtime) >= cutoff
+        and datetime.fromtimestamp(_analysis_mtime(path)) >= cutoff
     ]
-    return max(candidates, key=lambda path: path.stat().st_mtime) if candidates else None
+    return max(candidates, key=_analysis_mtime) if candidates else None
 
 
 def _run_full_analysis(portfolio_name: str, config: str) -> None:
