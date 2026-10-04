@@ -152,7 +152,7 @@ def config_editor() -> dict[str, Any]:
         for index, (key, title, description) in enumerate(MODULES):
             settings = modules.setdefault(key, module_config(config, key))
             with cols[index % 2]:
-                settings["enabled"] = st.toggle(title, value=bool(settings.get("enabled", True)), key=f"enabled_{key}")
+                settings["enabled"] = st.toggle(title, value=bool(settings["enabled"]), key=f"enabled_{key}")
                 st.caption(description)
                 if key == "market_search":
                     render_search_criteria_editor(settings)
