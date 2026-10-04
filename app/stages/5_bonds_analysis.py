@@ -7,16 +7,11 @@ from pathlib import Path
 import pandas as pd
 
 from app.core.market_analysis import ofz_spread_adjustment, score_row, yes
-from app.core.pipeline_common import clean_secid_rows, latest, merge_by_secid
+from app.core.pipeline_common import clean_secid_rows, merge_by_secid
+from app.core.stage_io import load_stage_frame
 from app.core.search_contract import SEARCH_REQUIRED_COLUMNS, missing_search_columns, normalize_search_columns
 
 REQUIRED = SEARCH_REQUIRED_COLUMNS
-
-
-def load_stage(path: Path | None, sheet: str) -> pd.DataFrame:
-    if path is None:
-        return pd.DataFrame(columns=["Код ценной бумаги"])
-    return clean_secid_rows(pd.read_excel(path, sheet_name=sheet))
 
 
 def main() -> None:
@@ -29,21 +24,21 @@ def main() -> None:
     parser.add_argument("--output-dir", default=".")
     args = parser.parse_args()
     root = Path(".")
-    source = Path(args.input) if args.input else latest(root, "bond_search_*.xlsx")
-    df = clean_secid_rows(pd.read_excel(source, sheet_name="Результаты поиска"))
-    df = normalize_search_columns(df)
+    base_input = load_stage_frame(run_dir=root, module="market_search", pattern="bond_search_*.xlsx",
+                                  sheet="Результаты поиска", explicit=args.input)
+    df = normalize_search_columns(clean_secid_rows(base_input.frame))
     missing = missing_search_columns(df)
     if missing:
         raise ValueError("Нет колонок: " + ", ".join(sorted(missing)))
 
-    cash_path = Path(args.cashflow) if args.cashflow else latest(root, "bond_cashflow_*.xlsx", required=False)
-    news_path = Path(args.news) if args.news else latest(root, "bond_news_*.xlsx", required=False)
-    volume_path = Path(args.volume) if args.volume else latest(root, "bond_purchase_volume_*.xlsx", required=False)
-    ofz_path = Path(args.ofz_spread) if args.ofz_spread else latest(root, "bond_ofz_spread_*.xlsx", required=False)
-    df = merge_by_secid(df, load_stage(cash_path, "Cashflow"))
-    df = merge_by_secid(df, load_stage(news_path, "Новости"))
-    df = merge_by_secid(df, load_stage(volume_path, "Объем покупки"))
-    df = merge_by_secid(df, load_stage(ofz_path, "Спред к ОФЗ"))
+    cash = load_stage_frame(run_dir=root, module="cashflow", pattern="bond_cashflow_*.xlsx", sheet="Cashflow", explicit=args.cashflow, required=False)
+    news = load_stage_frame(run_dir=root, module="news", pattern="bond_news_*.xlsx", sheet="Новости", explicit=args.news, required=False)
+    volume = load_stage_frame(run_dir=root, module="liquidity", pattern="bond_purchase_volume_*.xlsx", sheet="Объем покупки", explicit=args.volume, required=False)
+    ofz = load_stage_frame(run_dir=root, module="ofz_spread", pattern="bond_ofz_spread_*.xlsx", sheet="Спред к ОФЗ", explicit=args.ofz_spread, required=False)
+    df = merge_by_secid(df, clean_secid_rows(cash.frame))
+    df = merge_by_secid(df, clean_secid_rows(news.frame))
+    df = merge_by_secid(df, clean_secid_rows(volume.frame))
+    df = merge_by_secid(df, clean_secid_rows(ofz.frame))
 
     results = [score_row(row) for _, row in df.iterrows()]
     df["Оценка, 0-100"] = [x[0] for x in results]
@@ -52,10 +47,10 @@ def main() -> None:
     df["Риски и ограничения"] = ["; ".join(x[3]) or "—" for x in results]
     df["Жёсткий стоп"] = ["ДА" if x[4] else "НЕТ" for x in results]
     df["Поправка за спред к ОФЗ"] = [x[5] for x in results]
-    df["Источник cashflow"] = cash_path.name if cash_path else "НЕ НАЙДЕН"
-    df["Источник новостей"] = news_path.name if news_path else "НЕ НАЙДЕН"
-    df["Источник ликвидности"] = volume_path.name if volume_path else "НЕ НАЙДЕН"
-    df["Источник спреда к ОФЗ"] = ofz_path.name if ofz_path else "НЕ НАЙДЕН"
+    df["Источник cashflow"] = cash.source
+    df["Источник новостей"] = news.source
+    df["Источник ликвидности"] = volume.source
+    df["Источник спреда к ОФЗ"] = ofz.source
     df = df.sort_values(["Оценка, 0-100", "Доходность"], ascending=[False, False])
 
     out = Path(args.output_dir)
@@ -69,11 +64,11 @@ def main() -> None:
             {
                 "Этап": ["1", "2", "3", "4b", "4c"],
                 "Файл": [
-                    source.name,
-                    cash_path.name if cash_path else "нет",
-                    news_path.name if news_path else "нет",
-                    volume_path.name if volume_path else "нет",
-                    ofz_path.name if ofz_path else "нет",
+                    base_input.source,
+                    cash.source,
+                    news.source,
+                    volume.source,
+                    ofz.source,
                 ],
             }
         ).to_excel(writer, sheet_name="Источники", index=False)
