@@ -15,6 +15,7 @@ Usage:
   python bondlab.py portfolio show --name NAME
   python bondlab.py portfolio ledger --name NAME
   python bondlab.py invest --portfolio NAME --amount RUB [--force-refresh]
+  python bondlab.py repair --run-dir RUN_DIR [--module MODULE]
 
 Examples:
   .\.venv\Scripts\python.exe .\bondlab.py gui
@@ -78,6 +79,12 @@ def main() -> None:
             index = translated.index("--portfolio")
             translated[index] = "--name"
         _invoke(portfolio_main, ["invest", *translated])
+        return
+
+    if command == "repair":
+        from app.cli.repair import main as repair_main
+
+        _invoke(repair_main, rest)
         return
 
     raise SystemExit(f"Неизвестная команда: {command}\n\n{USAGE}")
