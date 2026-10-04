@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from app.core.configuration import is_enabled, load_config, module_config
+from app.core.data_quality import build_quality_report, print_quality_summary
 from app.core.master_dataset import build_master_dataset
 from app.core.project_paths import PROJECT_ROOT
 from app.core.process_runner import run_module
@@ -211,6 +212,12 @@ def main() -> None:
         print(f"\nЕдиный набор данных GUI обновлён: {master_path}")
     except Exception as exc:
         print(f"\n⚠ Не удалось собрать bonds_master.json: {exc}")
+
+    try:
+        quality_report = build_quality_report(run_dir, run_store, run_id)
+        print_quality_summary(quality_report)
+    except Exception as exc:
+        print(f"\n⚠ Не удалось собрать Data Quality report: {exc}")
 
     if soft_errors:
         print("\n⚠ Конвейер завершён с неполными внешними данными: " + ", ".join(soft_errors))

@@ -11,7 +11,7 @@ from typing import Any
 import pandas as pd
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -47,6 +47,24 @@ class RunStore:
         )
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_stage_results_run_module ON stage_results(run_id, module)"
+        )
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS data_quality (
+                run_id TEXT NOT NULL,
+                secid TEXT NOT NULL,
+                source TEXT NOT NULL,
+                status TEXT NOT NULL,
+                required INTEGER NOT NULL,
+                fetched_at TEXT,
+                records INTEGER,
+                error TEXT,
+                details_json TEXT,
+                PRIMARY KEY (run_id, secid, source),
+                FOREIGN KEY (run_id) REFERENCES pipeline_runs(run_id) ON DELETE CASCADE
+            )"""
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_data_quality_run_status ON data_quality(run_id, status)"
         )
         return connection
 
@@ -118,6 +136,47 @@ class RunStore:
                 (run_id,),
             ).fetchall()
         return tuple(row[0] for row in rows)
+
+
+    def write_quality_rows(self, run_id: str, rows: list[dict[str, Any]]) -> None:
+        now = datetime.now().isoformat(timespec="seconds")
+        with self._connect() as db:
+            db.execute("DELETE FROM data_quality WHERE run_id=?", (run_id,))
+            db.executemany(
+                """INSERT INTO data_quality(
+                    run_id, secid, source, status, required, fetched_at, records, error, details_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                [
+                    (
+                        run_id,
+                        str(row.get("secid") or ""),
+                        str(row.get("source") or ""),
+                        str(row.get("status") or "UNKNOWN"),
+                        1 if row.get("required") else 0,
+                        row.get("fetched_at") or now,
+                        row.get("records"),
+                        row.get("error"),
+                        json.dumps(row.get("details") or {}, ensure_ascii=False),
+                    )
+                    for row in rows
+                ],
+            )
+
+    def read_quality_rows(self, run_id: str) -> list[dict[str, Any]]:
+        with self._connect() as db:
+            rows = db.execute(
+                """SELECT secid, source, status, required, fetched_at, records, error, details_json
+                   FROM data_quality WHERE run_id=? ORDER BY secid, source""",
+                (run_id,),
+            ).fetchall()
+        return [
+            {
+                "secid": row[0], "source": row[1], "status": row[2], "required": bool(row[3]),
+                "fetched_at": row[4], "records": row[5], "error": row[6],
+                "details": json.loads(row[7] or "{}"),
+            }
+            for row in rows
+        ]
 
 
 def run_id_for(run_dir: Path) -> str:
