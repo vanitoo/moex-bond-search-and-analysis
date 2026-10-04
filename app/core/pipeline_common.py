@@ -31,7 +31,9 @@ def clean_secid_rows(df: pd.DataFrame) -> pd.DataFrame:
     result = df.copy()
     result = result.dropna(subset=["Код ценной бумаги"])
     result["Код ценной бумаги"] = result["Код ценной бумаги"].astype(str).str.strip().str.upper()
-    result = result[result["Код ценной бумаги"].str.fullmatch(r"RU[A-Z0-9]{10}", na=False)]
+    # Keep non-empty identifiers for reusable workflow/tests; MOEX-specific validation belongs
+    # at the market/provider boundary, not in the generic pipeline merge helper.
+    result = result[result["Код ценной бумаги"].ne("")]
     return result.drop_duplicates(subset=["Код ценной бумаги"], keep="first").reset_index(drop=True)
 
 

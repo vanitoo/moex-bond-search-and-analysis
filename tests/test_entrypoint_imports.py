@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -8,10 +9,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _runtime_env() -> dict[str, str]:
+    env = os.environ.copy()
+    roots = [str(ROOT), str(ROOT / "src")]
+    if env.get("PYTHONPATH"):
+        roots.append(env["PYTHONPATH"])
+    env["PYTHONPATH"] = os.pathsep.join(roots)
+    return env
+
+
 def _help_from_external_cwd(script: str, tmp_path: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(ROOT / script), "--help"],
         cwd=tmp_path,
+        env=_runtime_env(),
         text=True,
         capture_output=True,
         timeout=30,

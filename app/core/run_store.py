@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -17,7 +18,7 @@ SCHEMA_VERSION = 1
 class RunStore:
     path: Path
 
-    def _connect(self) -> sqlite3.Connection:
+    def _open(self) -> sqlite3.Connection:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(self.path)
         connection.execute("PRAGMA journal_mode=WAL")
@@ -48,6 +49,18 @@ class RunStore:
             "CREATE INDEX IF NOT EXISTS idx_stage_results_run_module ON stage_results(run_id, module)"
         )
         return connection
+
+    @contextmanager
+    def _connect(self):
+        connection = self._open()
+        try:
+            yield connection
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.close()
 
     def ensure_run(self, run_id: str, run_dir: Path, *, strategy: str | None = None) -> None:
         now = datetime.now().isoformat(timespec="seconds")

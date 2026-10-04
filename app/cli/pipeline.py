@@ -85,6 +85,11 @@ def selected_stages(args: argparse.Namespace) -> list[PipelineStage]:
     return [stage for stage in PIPELINE_STAGES if stage.key in requested]
 
 
+def selected_stage_numbers(args: argparse.Namespace) -> list[int]:
+    """Compatibility helper returning selected pipeline stage numbers."""
+    return [stage.number for stage in selected_stages(args)]
+
+
 def record_stage_error(run_dir: Path, spec, config: dict, exc: subprocess.CalledProcessError) -> None:
     mode = module_config(config, spec.key).get("mode", "information")
     append_event(run_dir, {
