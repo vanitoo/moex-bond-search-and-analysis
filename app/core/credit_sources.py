@@ -113,6 +113,7 @@ def refresh_financials(
     *,
     enabled: bool,
     options: FinancialRefreshOptions,
+    fetcher=fetch_financials_for_inns,
 ) -> pd.DataFrame:
     if not enabled:
         return existing
@@ -124,7 +125,7 @@ def refresh_financials(
         )
     )
     try:
-        fetched, stats = fetch_financials_for_inns(
+        fetched, stats = fetcher(
             population.corporate_inns,
             cache_dir=data_dir / "financial_cache" / "fns_bfo",
             cache_days=max(0, options.cache_days),
