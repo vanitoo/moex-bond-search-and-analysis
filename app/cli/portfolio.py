@@ -2,18 +2,42 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
 from app.core.process_runner import entrypoint_command, run_command
 from app.core.project_paths import GUI_CONFIG, PROJECT_ROOT, RUNS_ROOT, VIRTUAL_PORTFOLIOS_ROOT
-from app.core.run_paths import latest_analysis_run
+from app.core.run_paths import iter_analysis_dirs, latest_analysis_run
 from app.portfolio.portfolio_allocator import allocate_budget
 from app.portfolio.portfolio_ledger import append_transaction, cash_balance, read_ledger
 from app.portfolio.portfolio_plan import apply_allocation_plan
 from app.portfolio.portfolio_store import create_portfolio, load_portfolio, remove_position, save_portfolio, upsert_position
 
 LEDGER_ROOT = PROJECT_ROOT / "data" / "portfolio_ledger"
+
+
+def _is_complete_analysis(run_dir: Path) -> bool:
+    decisions = run_dir / "decisions"
+    return (decisions / "bonds_master.json").exists() and (decisions / "portfolio_shortlist.json").exists()
+
+
+def _fresh_analysis_run(max_age_hours: float) -> Path | None:
+    cutoff = datetime.now() - timedelta(hours=max_age_hours)
+    candidates = [
+        path for path in iter_analysis_dirs(PROJECT_ROOT)
+        if _is_complete_analysis(path)
+        and datetime.fromtimestamp(path.stat().st_mtime) >= cutoff
+    ]
+    return max(candidates, key=lambda path: path.stat().st_mtime) if candidates else None
+
+
+def _run_full_analysis(portfolio_name: str, config: str) -> None:
+    command = entrypoint_command(PROJECT_ROOT / "bondlab.py", [
+        "pipeline", "--from-stage", "1", "--to-stage", "10",
+        "--config", str(Path(config).resolve()), "--portfolio", portfolio_name,
+    ])
+    run_command(command, cwd=PROJECT_ROOT, project_root=PROJECT_ROOT)
 
 
 def _load_master(run_dir: Path) -> tuple[dict, dict[str, dict]]:
@@ -89,16 +113,24 @@ def transaction_command(args: argparse.Namespace) -> None:
 
 def invest_command(args: argparse.Namespace) -> None:
     portfolio = load_portfolio(VIRTUAL_PORTFOLIOS_ROOT, args.name)
-    if args.refresh:
-        command = entrypoint_command(PROJECT_ROOT / "bondlab.py", [
-            "pipeline", "--from-stage", "1", "--to-stage", "10",
-            "--config", str(Path(args.config).resolve()), "--portfolio", args.name,
-        ])
-        run_command(command, cwd=PROJECT_ROOT, project_root=PROJECT_ROOT)
+    if args.run_dir:
+        run_dir = Path(args.run_dir).resolve()
+        print(f"Используем явно указанный анализ: {run_dir.name}")
+    elif args.force_refresh:
+        print("Запрошен принудительный новый анализ рынка.")
+        _run_full_analysis(args.name, args.config)
+        run_dir = latest_analysis_run(PROJECT_ROOT)
+    else:
+        run_dir = _fresh_analysis_run(args.max_age_hours)
+        if run_dir is not None:
+            print(f"Используем свежий готовый анализ: {run_dir.name}")
+        else:
+            print(f"Готового анализа моложе {args.max_age_hours:g} ч нет — запускаем pipeline 1–10.")
+            _run_full_analysis(args.name, args.config)
+            run_dir = latest_analysis_run(PROJECT_ROOT)
 
-    run_dir = Path(args.run_dir).resolve() if args.run_dir else latest_analysis_run(PROJECT_ROOT)
-    if run_dir is None:
-        raise FileNotFoundError("Нет полного анализа. Запустите invest с --refresh или сначала pipeline 1-10.")
+    if run_dir is None or not _is_complete_analysis(run_dir):
+        raise FileNotFoundError("Не найден завершённый анализ с master dataset и shortlist.")
 
     _, bonds = _load_master(run_dir)
     candidates = _candidate_secids(run_dir)
@@ -174,7 +206,9 @@ def main() -> None:
     invest = sub.add_parser("invest")
     invest.add_argument("--name", required=True)
     invest.add_argument("--amount", required=True, type=float)
-    invest.add_argument("--refresh", action="store_true", help="Перед планом выполнить полный pipeline 1-10")
+    invest.add_argument("--refresh", action="store_true", help="Совместимость: invest и так обновит данные, если свежего анализа нет")
+    invest.add_argument("--force-refresh", action="store_true", help="Всегда выполнить новый pipeline 1-10")
+    invest.add_argument("--max-age-hours", type=float, default=12.0, help="Максимальный возраст готового анализа для повторного использования")
     invest.add_argument("--config", default=str(GUI_CONFIG))
     invest.add_argument("--run-dir")
     invest.add_argument("--max-position-percent", type=float, default=20.0)
