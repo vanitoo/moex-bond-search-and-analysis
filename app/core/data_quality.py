@@ -9,9 +9,22 @@ from app.core.run_store import RunStore
 
 REQUIRED_SOURCES = ("market_search", "cashflow", "liquidity", "ofz_spread", "credit", "decision")
 OPTIONAL_SOURCES = ("news",)
-GOOD = {"PASS"}
-DEGRADED = {"WARNING", "NO_DATA"}
-BAD = {"FAIL", "ERROR"}
+
+# These codes describe missing/partial data. Business rejection codes such as
+# FINAL_REJECT, NO_PURCHASE_VOLUME or HIGH_OFZ_SPREAD are valid observations,
+# not pipeline-health failures.
+DEGRADED_CODES = {"INCOMPLETE_CASHFLOW", "ORDERBOOK_UNKNOWN", "SECTOR_DATA_PARTIAL", "NEWS_NOT_FOUND"}
+INCOMPLETE_CODES = {"STAGE_PROCESS_ERROR", "OUTPUT_NOT_FOUND", "CREDIT_RATING_MISSING", "CORPORATE_FINANCIALS_MISSING", "FINAL_NO_DATA"}
+RETRYABLE_CODES = {"STAGE_PROCESS_ERROR", "OUTPUT_NOT_FOUND", "INCOMPLETE_CASHFLOW", "ORDERBOOK_UNKNOWN"}
+REPAIR_STAGE = {
+    "market_search": 1,
+    "cashflow": 2,
+    "news": 3,  # rerun downloader before news analysis
+    "liquidity": 5,
+    "ofz_spread": 6,
+    "credit": 9,
+    "decision": 10,
+}
 
 
 def _latest_events(run_dir: Path) -> dict[tuple[str, str], dict[str, Any]]:
@@ -31,6 +44,39 @@ def _latest_events(run_dir: Path) -> dict[tuple[str, str], dict[str, Any]]:
     return latest
 
 
+def _health_for_event(source: str, event: dict[str, Any] | None) -> tuple[str, bool, str, str]:
+    if event is None:
+        return "MISSING", True, "MISSING", "Нет результата источника/этапа"
+    event_status = str(event.get("status") or "UNKNOWN").upper()
+    code = str(event.get("reason_code") or "").upper()
+    reason = str(event.get("reason") or "")
+    if event_status == "ERROR" or code in INCOMPLETE_CODES:
+        return "INCOMPLETE", code in RETRYABLE_CODES, code or "ERROR", reason
+    if code in DEGRADED_CODES:
+        return "DEGRADED", code in RETRYABLE_CODES, code, reason
+    if event_status in {"NO_DATA"}:
+        # Unknown NO_DATA is data-health degradation, but not blindly retryable.
+        return "DEGRADED", False, code or "NO_DATA", reason
+    # FAIL/WARNING may be a valid business/risk result. If it is not one of the
+    # explicit data-quality codes above, the data itself was successfully loaded.
+    return "COMPLETE", False, code or event_status, reason
+
+
+def repairable_sources(report: dict[str, Any]) -> list[str]:
+    result: set[str] = set()
+    for security in report.get("securities", []):
+        for source, details in (security.get("sources") or {}).items():
+            if details.get("retryable") and details.get("status") in {"MISSING", "INCOMPLETE", "DEGRADED"}:
+                result.add(source)
+    return sorted(result, key=lambda source: REPAIR_STAGE.get(source, 999))
+
+
+def repair_start_stage(report: dict[str, Any]) -> int | None:
+    sources = repairable_sources(report)
+    if not sources:
+        return None
+    return min(REPAIR_STAGE[source] for source in sources if source in REPAIR_STAGE)
+
 def build_quality_report(run_dir: Path, store: RunStore, run_id: str) -> dict[str, Any]:
     market = store.read_frame(run_id, "market_search")
     secids: list[str] = []
@@ -49,29 +95,28 @@ def build_quality_report(run_dir: Path, store: RunStore, run_id: str) -> dict[st
         for source in (*REQUIRED_SOURCES, *OPTIONAL_SOURCES):
             required = source in REQUIRED_SOURCES
             event = events.get((secid, source))
-            if event is None:
-                status = "MISSING"
-                reason = "Нет результата источника/этапа"
-            else:
-                status = str(event.get("status") or "UNKNOWN").upper()
-                reason = str(event.get("reason") or "")
+            status, retryable, reason_code, reason = _health_for_event(source, event)
             rows.append({
                 "secid": secid, "source": source, "status": status, "required": required,
                 "fetched_at": event.get("timestamp") if event else now,
-                "records": 1 if event else 0, "error": reason if status in BAD | {"MISSING"} else None,
-                "details": {"reason": reason, "reason_code": event.get("reason_code") if event else "MISSING"},
+                "records": 1 if event else 0,
+                "error": reason if status in {"MISSING", "INCOMPLETE"} else None,
+                "details": {"reason": reason, "reason_code": reason_code, "retryable": retryable},
             })
-            sources[source] = {"status": status, "required": required, "reason": reason}
+            sources[source] = {
+                "status": status, "required": required, "reason": reason,
+                "reason_code": reason_code, "retryable": retryable,
+            }
 
         required_statuses = [sources[x]["status"] for x in REQUIRED_SOURCES]
         optional_statuses = [sources[x]["status"] for x in OPTIONAL_SOURCES]
-        if any(x in BAD or x in {"MISSING", "UNKNOWN"} for x in required_statuses):
+        if any(x in {"MISSING", "INCOMPLETE"} for x in required_statuses):
             overall = "INCOMPLETE"
-        elif any(x in DEGRADED for x in required_statuses) or any(x in BAD | DEGRADED | {"MISSING", "UNKNOWN"} for x in optional_statuses):
+        elif any(x == "DEGRADED" for x in required_statuses) or any(x in {"MISSING", "INCOMPLETE", "DEGRADED"} for x in optional_statuses):
             overall = "DEGRADED"
         else:
             overall = "COMPLETE"
-        complete_required = sum(1 for x in required_statuses if x in GOOD)
+        complete_required = sum(1 for x in required_statuses if x == "COMPLETE")
         quality_score = round(100.0 * complete_required / len(REQUIRED_SOURCES), 1)
         securities.append({"secid": secid, "status": overall, "quality_score": quality_score, "sources": sources})
 
