@@ -10,6 +10,7 @@ import pandas as pd
 from app.core.configuration import module_config
 from app.core.pipeline_common import clean_secid_rows, latest, normalize, safe_float
 from app.core.stage_registry import BY_SCRIPT, MODULES, ModuleSpec
+from app.core.run_store import RunStore
 
 
 def decisions_dir(run_dir: Path) -> Path:
@@ -110,7 +111,14 @@ def _status_for_row(module: str, row: pd.Series) -> tuple[str, bool | None, bool
     return status, passed, hard_stop, score_delta, code, reason
 
 
-def collect_stage(run_dir: Path, spec: ModuleSpec, config: dict[str, Any]) -> None:
+def collect_stage(
+    run_dir: Path,
+    spec: ModuleSpec,
+    config: dict[str, Any],
+    *,
+    store: RunStore | None = None,
+    run_id: str | None = None,
+) -> None:
     if spec.output_pattern is None:
         append_event(run_dir, {
             "timestamp": datetime.now().isoformat(timespec="seconds"),
@@ -148,6 +156,8 @@ def collect_stage(run_dir: Path, spec: ModuleSpec, config: dict[str, Any]) -> No
     if secid_column and secid_column != "Код ценной бумаги":
         df = df.rename(columns={secid_column: "Код ценной бумаги"})
     df = clean_secid_rows(df)
+    if store is not None and run_id is not None:
+        store.write_frame(run_id, spec.key, df)
 
     for _, row in df.iterrows():
         status, passed, hard_stop, score_delta, code, reason = _status_for_row(spec.key, row)
