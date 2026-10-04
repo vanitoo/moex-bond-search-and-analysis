@@ -2,7 +2,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from app.core.pipeline_architecture import _status_for_row, is_enabled, load_config
+from app.core.configuration import is_enabled, load_config
+from app.core.pipeline_architecture import _status_for_row
 
 
 def test_balanced_config_enables_modules():
