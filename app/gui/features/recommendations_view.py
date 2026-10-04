@@ -5,6 +5,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
+from app.core.configuration import is_enabled
 from app.gui.features import base
 from app.gui.features import portfolio_view
 from app.portfolio.portfolio_recommendation import recommend_candidate
@@ -190,7 +191,7 @@ def render_recommendations(run_dir) -> None:
 
 def render_run_update(run_dir, config: dict[str, Any]) -> None:
     st.subheader("Запуск / обновление")
-    enabled = [key for key in base.MODULE_KEYS if config.get("modules", {}).get(key, {}).get("enabled", True)]
+    enabled = [key for key in base.MODULE_KEYS if is_enabled(config, key)]
     remaining = [key for key in enabled if base.module_state(run_dir, key)["file"] is None]
 
     if remaining:
