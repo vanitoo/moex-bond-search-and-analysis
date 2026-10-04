@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import argparse
+from datetime import date
 from pathlib import Path
 
 from app.core.project_paths import PROJECT_ROOT
-from moex_bond_search_and_analysis.market_scanner_v2 import ScannerConfig, run_scan
+from app.core.stage_io import publish_stage_frame
+from moex_bond_search_and_analysis.market_scanner_v2 import ScannerConfig, scan_market
+from moex_bond_search_and_analysis.market_scanner_v2.exporter import export_excel
 from moex_bond_search_and_analysis.market_scanner_v2.models import DEFAULT_CACHE_HOURS, DEFAULT_WORKERS
 
 
@@ -32,7 +35,10 @@ def main() -> None:
     args = parse_args()
     config = ScannerConfig(**vars(args))
     try:
-        run_scan(config, PROJECT_ROOT)
+        result, rejected, metadata = scan_market(config, PROJECT_ROOT)
+        publish_stage_frame("market_search", result)
+        output = config.output or Path.cwd() / f"bond_search_{date.today():%Y-%m-%d}.xlsx"
+        export_excel(output, result, rejected, config, metadata["market_count"], metadata["candidate_count"], metadata["elapsed"])
     except ValueError as exc:
         raise SystemExit(f"Ошибка параметров: {exc}") from exc
 
