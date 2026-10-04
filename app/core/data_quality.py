@@ -39,8 +39,9 @@ def _latest_events(run_dir: Path) -> dict[tuple[str, str], dict[str, Any]]:
             continue
         secid = str(event.get("secid") or "").strip().upper()
         module = str(event.get("module") or "").strip()
-        if secid and module:
-            latest[(secid, module)] = event
+        if module:
+            key = (secid or "*", module)
+            latest[key] = event
     return latest
 
 
@@ -95,6 +96,11 @@ def build_quality_report(run_dir: Path, store: RunStore, run_id: str) -> dict[st
         for source in (*REQUIRED_SOURCES, *OPTIONAL_SOURCES):
             required = source in REQUIRED_SOURCES
             event = events.get((secid, source))
+            global_event = events.get(("*", source))
+            if global_event is not None and (
+                event is None or str(global_event.get("timestamp") or "") > str(event.get("timestamp") or "")
+            ):
+                event = global_event
             status, retryable, reason_code, reason = _health_for_event(source, event)
             rows.append({
                 "secid": secid, "source": source, "status": status, "required": required,
@@ -154,3 +160,6 @@ def print_quality_summary(report: dict[str, Any]) -> None:
     print(f"🟢 Complete:   {counts.get('COMPLETE', 0)}")
     print(f"🟡 Degraded:   {counts.get('DEGRADED', 0)}")
     print(f"🔴 Incomplete: {counts.get('INCOMPLETE', 0)}")
+    repairable = repairable_sources(report)
+    if repairable:
+        print("↻ Можно повторить загрузку: " + ", ".join(repairable))
