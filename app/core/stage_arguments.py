@@ -11,7 +11,7 @@ DEFAULT_RATINGS_CACHE_HOURS = 24
 
 
 def selected_market_script(config: dict) -> str:
-    version = module_config(config, "market_search").get("version", "v1")
+    version = module_config(config, "market_search")["version"]
     try:
         return resolve_market_script(str(version))
     except ValueError as exc:
