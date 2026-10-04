@@ -8,7 +8,7 @@ import pandas as pd
 
 
 from app.core.deep_analysis import analyze_deep_row, evaluate, is_yes
-from app.core.stage_io import load_stage_frame
+from app.core.stage_io import load_stage_frame, publish_stage_frame
 from app.core.stage_contract import FrameContract
 
 REQUIRED = {
@@ -27,6 +27,7 @@ def main() -> None:
     df = stage_input.frame
     INPUT_CONTRACT.validate(df)
     result = pd.DataFrame([evaluate(row) for _, row in df.iterrows()]).sort_values("Итоговый балл", ascending=False)
+    publish_stage_frame("deep_analysis", result)
     out = Path(args.output_dir); out.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y-%m-%d")
     xlsx = out / f"bond_deep_analysis_{stamp}.xlsx"
