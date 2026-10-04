@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from app.core.pipeline_architecture import is_enabled, load_config
+from app.core.configuration import is_enabled, load_config
 from app.core.pipeline_common import clean_secid_rows, latest, merge_by_secid
 from moex_bond_search_and_analysis.rating_signal import load_rating_events
 from app.portfolio.portfolio_shortlist import annotate_decisions, write_shortlist
