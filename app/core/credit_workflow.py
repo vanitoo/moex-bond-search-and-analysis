@@ -9,6 +9,7 @@ import pandas as pd
 
 from app.core.credit_engine import build_analysis
 from app.core.credit_report import write_excel, write_html
+from app.core.stage_contract import FrameContract
 from app.core.credit_sources import (
     BankRefreshOptions,
     FinancialRefreshOptions,
@@ -37,6 +38,7 @@ REQUIRED_DEEP_COLUMNS = {
     "Полное наименование", "Код ценной бумаги", "Итоговый балл", "Решение",
     "Жёсткий стоп", "Доходность", "Риски", "Недостающие данные",
 }
+DEEP_INPUT_CONTRACT = FrameContract.from_columns("stage 7 / credit analysis", REQUIRED_DEEP_COLUMNS)
 
 
 @dataclass(frozen=True)
@@ -71,10 +73,7 @@ def find_latest_deep_file(directory: Path) -> Path:
 
 def load_deep(path: Path) -> pd.DataFrame:
     df = pd.read_excel(path, sheet_name="Глубокий анализ")
-    missing = REQUIRED_DEEP_COLUMNS.difference(df.columns)
-    if missing:
-        raise ValueError("Во входном файле отсутствуют колонки: " + ", ".join(sorted(missing)))
-    return df.dropna(subset=["Код ценной бумаги"]).copy()
+    return DEEP_INPUT_CONTRACT.clean(df)
 
 
 def create_templates(data_dir: Path) -> tuple[Path, Path]:
