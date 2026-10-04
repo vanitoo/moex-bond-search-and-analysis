@@ -14,14 +14,14 @@ Usage:
   python bondlab.py portfolio create --name NAME
   python bondlab.py portfolio show --name NAME
   python bondlab.py portfolio ledger --name NAME
-  python bondlab.py invest --portfolio NAME --amount RUB [--refresh]
+  python bondlab.py invest --portfolio NAME --amount RUB [--force-refresh]
 
 Examples:
   .\.venv\Scripts\python.exe .\bondlab.py gui
   .\.venv\Scripts\python.exe .\bondlab.py pipeline --from-stage 1 --to-stage 10 --config .\configs\gui_active.json
   .\.venv\Scripts\python.exe .\bondlab.py monitor --portfolio "Основной" --config .\configs\gui_active.json
   .\.venv\Scripts\python.exe .\bondlab.py portfolio create --name "Основной"
-  .\.venv\Scripts\python.exe .\bondlab.py invest --portfolio "Основной" --amount 50000 --refresh
+  .\.venv\Scripts\python.exe .\bondlab.py invest --portfolio "Основной" --amount 50000
 """
 
 
