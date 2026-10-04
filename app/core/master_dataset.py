@@ -9,6 +9,7 @@ from typing import Any
 import pandas as pd
 
 from app.core.stage_registry import RESULT_FILES
+from app.core.run_store import RunStore, run_id_for
 
 
 MODULE_SOURCES: dict[str, tuple[str, list[str]]] = {
@@ -233,7 +234,13 @@ def read_latest_trace(run_dir: Path) -> dict[str, dict[str, dict[str, Any]]]:
     return latest
 
 
-def build_master_dataset(run_dir: Path, output: Path | None = None) -> Path:
+def build_master_dataset(
+    run_dir: Path,
+    output: Path | None = None,
+    *,
+    store: RunStore | None = None,
+    run_id: str | None = None,
+) -> Path:
     run_dir = run_dir.expanduser().resolve()
     if not run_dir.exists():
         raise FileNotFoundError(f"Папка анализа не найдена: {run_dir}")
@@ -241,16 +248,21 @@ def build_master_dataset(run_dir: Path, output: Path | None = None) -> Path:
     bonds: dict[str, dict[str, Any]] = {}
     source_files: dict[str, str] = {}
 
+    effective_run_id = run_id or run_id_for(run_dir)
     for module, (pattern, sheets) in MODULE_SOURCES.items():
-        source = latest_file(run_dir, pattern)
-        if source is None:
-            continue
-        source_files[module] = source.name
-        try:
-            frame = read_module_frame(source, sheets)
-        except Exception as exc:
-            source_files[module] = f"{source.name} [ошибка чтения: {exc}]"
-            continue
+        frame = store.read_frame(effective_run_id, module) if store is not None else None
+        if frame is not None:
+            source_files[module] = f"sqlite:{effective_run_id}:{module}"
+        else:
+            source = latest_file(run_dir, pattern)
+            if source is None:
+                continue
+            source_files[module] = source.name
+            try:
+                frame = read_module_frame(source, sheets)
+            except Exception as exc:
+                source_files[module] = f"{source.name} [ошибка чтения: {exc}]"
+                continue
         secid_column = find_column(frame, SECID_ALIASES)
         if secid_column is None:
             continue

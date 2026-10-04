@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, TypedDict
 
-from app.core.project_paths import DEFAULT_CONFIG
+from app.core.project_paths import DEFAULT_CONFIG, GUI_CONFIG
 
 
 class ModuleSettings(TypedDict, total=False):
@@ -188,10 +189,32 @@ def normalize_config(
     return result
 
 
+def config_path_from_environment() -> Path | None:
+    """Return the explicit BOND_CONFIG path without reading or validating it."""
+
+    value = os.getenv("BOND_CONFIG", "").strip()
+    return Path(value).expanduser() if value else None
+
+
 def load_config(path: Path | None = None) -> AppConfig:
     source = path or DEFAULT_CONFIG
     payload = json.loads(source.read_text(encoding="utf-8"))
     return normalize_config(payload, strategy_hint=source.stem)
+
+
+def load_runtime_config() -> AppConfig:
+    """Load the effective process configuration through the canonical loader.
+
+    Historical runtime behavior is preserved: an explicit BOND_CONFIG wins;
+    otherwise GUI active settings are preferred when present, then balanced.
+    """
+
+    explicit = config_path_from_environment()
+    if explicit is not None:
+        return load_config(explicit)
+    if GUI_CONFIG.exists():
+        return load_config(GUI_CONFIG)
+    return load_config(DEFAULT_CONFIG)
 
 
 def save_config(path: Path, config: dict[str, Any]) -> Path:
@@ -202,6 +225,21 @@ def save_config(path: Path, config: dict[str, Any]) -> Path:
         encoding="utf-8",
     )
     return path
+
+
+def http_config(config: dict[str, Any]) -> HttpSettings:
+    """Return normalized HTTP settings from an already loaded config."""
+
+    section = config.get("http", {})
+    if not isinstance(section, dict):
+        return deepcopy(DEFAULT_HTTP)
+    result: HttpSettings = deepcopy(DEFAULT_HTTP)
+    result.update({
+        str(key): str(value)
+        for key, value in section.items()
+        if value is not None
+    })
+    return result
 
 
 def module_defaults(key: str) -> dict[str, Any]:

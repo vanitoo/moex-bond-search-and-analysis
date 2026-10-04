@@ -40,3 +40,24 @@ def test_unified_bondlab_entrypoint_works_from_external_cwd(tmp_path: Path):
     assert result.returncode == 0, result.stderr
     assert "pipeline" in result.stdout
     assert "monitor" in result.stdout
+
+
+def test_credit_entrypoint_error_path_reports_original_error(tmp_path: Path):
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "app/stages/7_bonds_credit_analysis.py"),
+            "--input",
+            str(tmp_path / "missing.xlsx"),
+            "--no-fetch-ratings",
+            "--no-fetch-financials",
+            "--no-fetch-bank-metrics",
+        ],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        timeout=30,
+    )
+    assert result.returncode == 1
+    assert "Ошибка:" in result.stderr
+    assert "NameError" not in result.stderr

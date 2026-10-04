@@ -1,47 +1,31 @@
 from __future__ import annotations
 
-import json
 import os
 from functools import lru_cache
-from pathlib import Path
 from typing import Any
 
 import requests
 
-DEFAULT_BROWSER_USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/140.0.0.0 Safari/537.36"
+from app.core.configuration import (
+    DEFAULT_HTTP,
+    http_config,
+    load_runtime_config,
 )
-DEFAULT_ACCEPT_LANGUAGE = "ru-RU,ru;q=0.9,en;q=0.8"
+
+DEFAULT_BROWSER_USER_AGENT = str(DEFAULT_HTTP["user_agent"])
+DEFAULT_ACCEPT_LANGUAGE = str(DEFAULT_HTTP["accept_language"])
 _PATCHED = False
 _ORIGINAL_SESSION_REQUEST = requests.sessions.Session.request
 
 
-def _project_root() -> Path:
-    return Path(__file__).resolve().parents[2]
-
-
 @lru_cache(maxsize=1)
 def _http_config() -> dict[str, str]:
-    explicit = os.getenv("BOND_CONFIG", "").strip()
-    candidates: list[Path] = []
-    if explicit:
-        candidates.append(Path(explicit).expanduser())
-    root = _project_root()
-    candidates.extend([
-        root / "configs" / "gui_active.json",
-        root / "configs" / "balanced.json",
-    ])
-    for path in candidates:
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        section = payload.get("http")
-        if isinstance(section, dict):
-            return {str(key): str(value) for key, value in section.items() if value is not None}
-    return {}
+    """Expose effective HTTP settings while keeping legacy helper semantics."""
+
+    try:
+        return dict(http_config(load_runtime_config()))
+    except (OSError, ValueError):
+        return dict(http_config({}))
 
 
 def user_agent() -> str:
