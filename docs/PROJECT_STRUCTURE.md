@@ -174,4 +174,13 @@ pythonpath = [".", "src"]
 - `app/cli/daily.py`, `app/portfolio/portfolio_daily_refresh.py` и GUI используют общий command/process builder вместо дублирования `sys.executable`, `python -m` и `PYTHONPATH`.
 - GUI и daily CLI используют константы из `app/core/project_paths.py` для конфигов, runs, reports и portfolio data вместо ручной сборки путей.
 
-Следующий рефакторинг: отделить configuration schema/defaults от Streamlit и CLI, чтобы GUI, pipeline и automation читали одну типизированную модель настроек без дублирования default-значений.
+## Конфигурация после шестого рефакторинга
+
+- `app/core/configuration.py` — единый источник схемы, default-значений, загрузки, нормализации и сохранения конфигурации.
+- GUI, pipeline, decision stage и ежедневный portfolio refresh больше не читают/собирают module defaults самостоятельно.
+- Частичный JSON-конфиг допустим: отсутствующие поля дополняются каноническими default-значениями при загрузке.
+- `module_config()` всегда возвращает настройки модуля уже с применёнными defaults; поэтому CLI argument builders не должны повторять числа вроде `35`, `1.2`, `60000` и т. п.
+- GUI сохраняет конфигурацию через общий `save_config()`, а не собственную JSON-сериализацию.
+- Структура покрыта `tests/test_configuration.py`.
+
+Следующий рефакторинг: отделить внешние интеграции (`MOEX`, рейтинги, ФНС, ЦБ, новости) от бизнес-слоя ещё жёстче — через единый слой providers/adapters, чтобы `app/core` не импортировал конкретные сетевые реализации напрямую.
