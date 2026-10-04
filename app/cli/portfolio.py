@@ -7,7 +7,8 @@ from pathlib import Path
 from uuid import uuid4
 
 from app.core.process_runner import entrypoint_command, run_command
-from app.core.data_quality import eligible_secids, load_quality_report, print_quality_summary
+from app.core.data_quality import eligible_secids, load_quality_report, print_quality_summary, repairable_sources
+from app.core.repair import run_repair
 from app.core.project_paths import GUI_CONFIG, PROJECT_ROOT, RUNS_ROOT, VIRTUAL_PORTFOLIOS_ROOT
 from app.core.run_paths import iter_analysis_dirs, latest_analysis_run
 from app.portfolio.portfolio_allocator import allocate_budget
@@ -141,12 +142,24 @@ def invest_command(args: argparse.Namespace) -> None:
     if run_dir is None or not _is_complete_analysis(run_dir):
         raise FileNotFoundError("Не найден завершённый анализ с master dataset и shortlist.")
 
-    _, bonds = _load_master(run_dir)
-    candidates = _candidate_secids(run_dir)
     quality = load_quality_report(run_dir)
     if quality is None:
         raise RuntimeError("Для выбранного анализа нет Data Quality report. Выполните новый pipeline 1–10.")
+
+    if args.auto_repair and repairable_sources(quality):
+        print_quality_summary(quality)
+        repaired = run_repair(
+            run_dir,
+            config=Path(args.config),
+            attempts=args.repair_attempts,
+        )
+        quality = repaired["report"]
+        print("\nПовторная проверка после AUTO REPAIR:")
     print_quality_summary(quality)
+
+    # Repair can rebuild decision/master/shortlist, so load them only afterwards.
+    _, bonds = _load_master(run_dir)
+    candidates = _candidate_secids(run_dir)
     allowed = eligible_secids(quality, allow_degraded=args.allow_degraded)
     blocked = [secid for secid in candidates if secid not in allowed]
     candidates = [secid for secid in candidates if secid in allowed]
@@ -234,6 +247,9 @@ def main() -> None:
     invest.add_argument("--config", default=str(GUI_CONFIG))
     invest.add_argument("--run-dir")
     invest.add_argument("--allow-degraded", action="store_true", help="Разрешить автопокупку бумаг со статусом DEGRADED; по умолчанию только COMPLETE")
+    invest.add_argument("--no-auto-repair", dest="auto_repair", action="store_false", help="Не повторять retryable-загрузки автоматически")
+    invest.add_argument("--repair-attempts", type=int, default=1, help="Число попыток AUTO REPAIR перед покупкой")
+    invest.set_defaults(auto_repair=True)
     invest.add_argument("--max-position-percent", type=float, default=20.0)
     invest.add_argument("--max-issuer-percent", type=float, default=25.0)
     invest.add_argument("-y", "--yes", action="store_true", help="Применить план без интерактивного подтверждения")
