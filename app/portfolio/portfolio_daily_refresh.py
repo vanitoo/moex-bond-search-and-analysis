@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -11,6 +10,7 @@ import pandas as pd
 
 import requests
 
+from app.core.configuration import default_config, load_config, module_config
 from app.core.process_runner import module_command, run_command
 from app.core.project_paths import GUI_CONFIG, PROJECT_ROOT, VIRTUAL_PORTFOLIOS_ROOT
 
@@ -224,20 +224,20 @@ def main() -> None:
     portfolio_input = run_dir / f"bond_search_portfolio_{stamp}.xlsx"
     build_portfolio_input(portfolio, portfolio_input)
 
-    providers = "google,moex,acra,expert_ra"
-    use_proxy = False
-    proxy_env = "NEWS_PROXY"
-    if config_path.exists():
-        try:
-            config = json.loads(config_path.read_text(encoding="utf-8"))
-            news_cfg = ((config.get("modules") or {}).get("news_search") or {})
-            configured = news_cfg.get("providers") or []
-            if configured:
-                providers = ",".join(str(x) for x in configured)
-            use_proxy = bool(news_cfg.get("proxy_enabled"))
-            proxy_env = str(news_cfg.get("proxy_env") or proxy_env)
-        except (OSError, json.JSONDecodeError):
-            pass
+    try:
+        config = load_config(config_path) if config_path.exists() else default_config()
+    except (OSError, ValueError):
+        config = default_config()
+    news_cfg = module_config(config, "news_search")
+    configured = news_cfg["providers"]
+    providers = (
+        configured
+        if isinstance(configured, str)
+        else ",".join(str(value).strip() for value in configured if str(value).strip())
+    )
+    providers = providers or "google,moex,acra,expert_ra"
+    use_proxy = bool(news_cfg["proxy_enabled"])
+    proxy_env = str(news_cfg["proxy_env"])
 
     news_search_cmd = module_command(
         "app.stages.3a_bonds_news_search",
