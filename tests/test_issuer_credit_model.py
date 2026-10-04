@@ -59,7 +59,7 @@ def test_bank_model_uses_cbr_metrics_when_available():
         "Н3": 95.0,
         "Н4": 70.0,
     })
-    result = credit.evaluate(
+    result = evaluate(
         _source("Сбербанк ПАО 001Р"),
         _rating(),
         None,
