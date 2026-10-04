@@ -12,6 +12,7 @@ from app.core.project_paths import PROJECT_ROOT
 from app.core.process_runner import run_module
 from app.core.run_paths import latest_pipeline_run, new_run_dir
 from app.core.run_store import RunStore, default_store_path, run_id_for
+from app.core.runtime_env import build_subprocess_env
 from app.core.stage_arguments import (
     DEFAULT_RATINGS_CACHE_HOURS,
     actual_script,
@@ -187,6 +188,11 @@ def main() -> None:
                 stage_args,
                 cwd=run_dir,
                 project_root=project_root,
+                env=build_subprocess_env(
+                    project_root,
+                    run_id=run_id,
+                    run_store=run_store.path,
+                ),
             )
         except subprocess.CalledProcessError as exc:
             record_stage_error(run_dir, spec, config, exc)
