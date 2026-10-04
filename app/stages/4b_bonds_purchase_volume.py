@@ -10,7 +10,7 @@ import pandas as pd
 import requests
 
 from app.core.pipeline_common import clean_secid_rows, dated_name, safe_float
-from app.core.stage_io import load_stage_frame
+from app.core.stage_io import load_stage_frame, publish_stage_frame
 
 MOEX = "https://iss.moex.com/iss"
 
@@ -132,8 +132,10 @@ def main() -> None:
             result.append(fetch(secid, args.impact_share))
         except Exception as exc:
             result.append({"Код ценной бумаги": secid, "Ошибка ликвидности": str(exc), "Ликвидность покупки": "Ошибка", "Качество данных ликвидности": "Ошибка", "Максимум к покупке, руб.": 0})
+    frame = pd.DataFrame(result).drop_duplicates(subset=["Код ценной бумаги"])
+    publish_stage_frame("liquidity", frame)
     output = Path(args.output or dated_name("bond_purchase_volume", "xlsx"))
-    pd.DataFrame(result).drop_duplicates(subset=["Код ценной бумаги"]).to_excel(output, sheet_name="Объем покупки", index=False)
+    frame.to_excel(output, sheet_name="Объем покупки", index=False)
     print(output)
 
 
