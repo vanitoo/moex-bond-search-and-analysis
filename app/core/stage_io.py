@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -47,3 +48,16 @@ def _read_excel(path: Path, sheet: str | int) -> pd.DataFrame:
         return pd.read_excel(path, sheet_name=sheet)
     except ValueError:
         return pd.read_excel(path, sheet_name=0)
+
+
+def publish_stage_frame(module: str, frame: pd.DataFrame) -> bool:
+    """Persist a stage result directly when running inside the pipeline.
+
+    Standalone stage execution remains file-only for backwards compatibility.
+    """
+    run_id = os.environ.get("BONDLAB_RUN_ID", "").strip()
+    store_path = os.environ.get("BONDLAB_RUN_STORE", "").strip()
+    if not run_id or not store_path:
+        return False
+    RunStore(Path(store_path)).write_frame(run_id, module, frame)
+    return True
