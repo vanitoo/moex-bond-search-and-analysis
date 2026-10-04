@@ -164,9 +164,9 @@ def main() -> None:
             settings = module_config(config, "market_search")
             print(
                 "Критерии: доходность "
-                f"{settings.get('yield_more', 15)}–{settings.get('yield_less', 40)}%; "
-                f"цена {settings.get('price_more', 70)}–{settings.get('price_less', 120)}%; "
-                f"дюрация {settings.get('duration_more', 3)}–{settings.get('duration_less', 18)} мес."
+                f"{settings['yield_more']}–{settings['yield_less']}%; "
+                f"цена {settings['price_more']}–{settings['price_less']}%; "
+                f"дюрация {settings['duration_more']}–{settings['duration_less']} мес."
             )
         mode = module_config(config, spec.key).get("mode", "information")
         print(f"Модуль: {spec.key}; режим: {mode}")
