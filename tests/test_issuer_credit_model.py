@@ -45,7 +45,7 @@ def test_noncorporate_model_does_not_require_corporate_financials():
 
 def test_corporate_model_still_requires_financials():
     model = classify_issuer("АЛРОСА 001Р-01")
-    result = credit.evaluate(_source("АЛРОСА 001Р-01"), _rating(), None, model)
+    result = evaluate(_source("АЛРОСА 001Р-01"), _rating(), None, model)
     assert "Финансовая отчётность" in result.missing
 
 
