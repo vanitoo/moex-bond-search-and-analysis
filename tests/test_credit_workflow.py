@@ -31,5 +31,5 @@ def test_load_optional_table_prefers_csv_and_fills_missing_columns(tmp_path: Pat
 def test_load_deep_validates_stage_contract(tmp_path: Path):
     path = tmp_path / "deep.xlsx"
     pd.DataFrame([{"Код ценной бумаги": "SEC"}]).to_excel(path, sheet_name="Глубокий анализ", index=False)
-    with pytest.raises(ValueError, match="отсутствуют колонки"):
+    with pytest.raises(ValueError, match="отсутствуют.*колонки"):
         load_deep(path)
