@@ -9,6 +9,8 @@ from app.core.decision_engine import (
     decide, issuer_key as _issuer_key, negative_factors as _negative_factors,
     normalize, yes,
 )
+from app.core.project_paths import PROJECT_ROOT
+from app.core.run_store import RunStore, default_store_path, run_id_for
 from app.core.decision_workflow import (
     DecisionWorkflowRequest, choose_base, load_optional, run_decision_workflow,
 )
@@ -27,6 +29,8 @@ def main() -> None:
         output_dir=Path(args.output_dir),
         config=config,
         explicit_input=args.input,
+        store=RunStore(default_store_path(PROJECT_ROOT)),
+        run_id=run_id_for(Path(".")),
     ))
 
     shortlist = result.shortlist
