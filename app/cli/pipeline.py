@@ -196,7 +196,7 @@ def main() -> None:
         collect_stage(run_dir, spec, config, store=run_store, run_id=run_id)
 
     try:
-        master_path = build_master_dataset(run_dir)
+        master_path = build_master_dataset(run_dir, store=run_store, run_id=run_id)
         print(f"\nЕдиный набор данных GUI обновлён: {master_path}")
     except Exception as exc:
         print(f"\n⚠ Не удалось собрать bonds_master.json: {exc}")
