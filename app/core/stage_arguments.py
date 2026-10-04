@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from app.core.pipeline_architecture import module_config
+from app.core.configuration import module_config
 from app.core.stage_registry import BY_SCRIPT, resolve_market_script
 
 
@@ -33,18 +33,18 @@ def ratings_cache_is_fresh(path: Path, max_age_hours: float) -> bool:
 
 def market_search_arguments(settings: dict) -> list[str]:
     arguments = [
-        "--yield-more", str(settings.get("yield_more", 15)),
-        "--yield-less", str(settings.get("yield_less", 40)),
-        "--price-more", str(settings.get("price_more", 70)),
-        "--price-less", str(settings.get("price_less", 120)),
-        "--duration-more", str(settings.get("duration_more", 3)),
-        "--duration-less", str(settings.get("duration_less", 18)),
-        "--volume-more", str(settings.get("volume_more", 2000)),
-        "--bond-volume-more", str(settings.get("bond_volume_more", 60000)),
+        "--yield-more", str(settings["yield_more"]),
+        "--yield-less", str(settings["yield_less"]),
+        "--price-more", str(settings["price_more"]),
+        "--price-less", str(settings["price_less"]),
+        "--duration-more", str(settings["duration_more"]),
+        "--duration-less", str(settings["duration_less"]),
+        "--volume-more", str(settings["volume_more"]),
+        "--bond-volume-more", str(settings["bond_volume_more"]),
     ]
     arguments.append(
         "--require-known-coupons"
-        if settings.get("require_known_coupons", True)
+        if settings["require_known_coupons"]
         else "--no-require-known-coupons"
     )
     return arguments
@@ -66,13 +66,13 @@ def stage_arguments(
         arguments = market_search_arguments(settings)
         if script_name == "1_bonds_market_scanner_v2.py":
             arguments += [
-                "--workers", str(settings.get("workers", 5)),
-                "--cache-hours", str(settings.get("cache_hours", 12)),
+                "--workers", str(settings["workers"]),
+                "--cache-hours", str(settings["cache_hours"]),
             ]
         return arguments
 
     if script_name == "3a_bonds_news_search.py":
-        providers = settings.get("providers", ["google", "moex", "acra", "expert_ra"])
+        providers = settings["providers"]
         if isinstance(providers, str):
             provider_value = providers
         else:
@@ -81,9 +81,9 @@ def stage_arguments(
             )
         arguments = [
             "--providers", provider_value or "google,moex,acra,expert_ra",
-            "--proxy-env", str(settings.get("proxy_env", "NEWS_PROXY")),
+            "--proxy-env", str(settings["proxy_env"]),
         ]
-        if settings.get("proxy_enabled", False):
+        if settings["proxy_enabled"]:
             arguments.append("--use-proxy")
         if "max_failure_share" in settings:
             arguments += ["--max-failure-share", str(settings["max_failure_share"])]
@@ -100,17 +100,17 @@ def stage_arguments(
             ratings_cache_hours,
         ):
             arguments.append("--no-fetch-ratings")
-        if settings.get("fetch_financials", True) is False:
+        if settings["fetch_financials"] is False:
             arguments.append("--no-fetch-financials")
-        if settings.get("fetch_bank_metrics", True) is False:
+        if settings["fetch_bank_metrics"] is False:
             arguments.append("--no-fetch-bank-metrics")
         arguments += [
-            "--financial-cache-days", str(settings.get("financial_cache_days", 35)),
-            "--financial-workers", str(settings.get("financial_workers", 1)),
-            "--financial-delay-seconds", str(settings.get("financial_delay_seconds", 1.2)),
-            "--financial-retries", str(settings.get("financial_retries", 4)),
-            "--bank-cache-days", str(settings.get("bank_cache_days", 7)),
-            "--bank-delay-seconds", str(settings.get("bank_delay_seconds", 0.4)),
+            "--financial-cache-days", str(settings["financial_cache_days"]),
+            "--financial-workers", str(settings["financial_workers"]),
+            "--financial-delay-seconds", str(settings["financial_delay_seconds"]),
+            "--financial-retries", str(settings["financial_retries"]),
+            "--bank-cache-days", str(settings["bank_cache_days"]),
+            "--bank-delay-seconds", str(settings["bank_delay_seconds"]),
         ]
         return arguments
 
