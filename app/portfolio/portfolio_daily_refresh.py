@@ -12,7 +12,7 @@ import pandas as pd
 import requests
 
 from app.core.process_runner import module_command, run_command
-from app.core.project_paths import PROJECT_ROOT
+from app.core.project_paths import GUI_CONFIG, PROJECT_ROOT, VIRTUAL_PORTFOLIOS_ROOT
 
 from app.core.pipeline_common import latest, safe_float
 from app.portfolio.portfolio_store import load_portfolio
@@ -210,8 +210,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Лёгкое ежедневное обновление только бумаг из портфеля")
     parser.add_argument("--name", required=True)
     parser.add_argument("--run-dir", required=True)
-    parser.add_argument("--portfolio-dir", default="data/virtual_portfolios")
-    parser.add_argument("--config", default="configs/gui_active.json")
+    parser.add_argument("--portfolio-dir", default=str(VIRTUAL_PORTFOLIOS_ROOT))
+    parser.add_argument("--config", default=str(GUI_CONFIG))
     args = parser.parse_args()
 
     run_dir = Path(args.run_dir).expanduser().resolve()
