@@ -8,7 +8,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from app.core.pipeline_common import clean_secid_rows, dated_name, latest, normalize
+from app.core.pipeline_common import clean_secid_rows, dated_name, normalize
+from app.core.stage_io import load_stage_frame
 
 DANGER = {
     "Дефолт/просрочка": ("дефолт", "просроч", "не выплат", "невыплат", "технический дефолт"),
@@ -144,8 +145,9 @@ def main() -> None:
     parser.add_argument("--news-dir", default=".")
     parser.add_argument("--output")
     args = parser.parse_args()
-    source = Path(args.input) if args.input else latest(Path("."), "bond_search_*.xlsx")
-    df = clean_secid_rows(pd.read_excel(source, sheet_name="Результаты поиска"))
+    stage_input = load_stage_frame(run_dir=Path("."), module="market_search", pattern="bond_search_*.xlsx", sheet="Результаты поиска", explicit=args.input)
+    df = clean_secid_rows(stage_input.frame)
+    print(f"Источник market_search: {stage_input.source}")
     news_root = Path(args.news_dir)
     files = source_files(news_root)
     coverage = load_coverage(news_root)
