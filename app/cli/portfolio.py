@@ -11,7 +11,7 @@ from app.core.run_paths import latest_analysis_run
 from app.portfolio.portfolio_allocator import allocate_budget
 from app.portfolio.portfolio_ledger import append_transaction, cash_balance, read_ledger
 from app.portfolio.portfolio_plan import apply_allocation_plan
-from app.portfolio.portfolio_store import create_portfolio, load_portfolio, save_portfolio
+from app.portfolio.portfolio_store import create_portfolio, load_portfolio, remove_position, save_portfolio, upsert_position
 
 LEDGER_ROOT = PROJECT_ROOT / "data" / "portfolio_ledger"
 
@@ -60,9 +60,28 @@ def ledger_command(args: argparse.Namespace) -> None:
 
 
 def transaction_command(args: argparse.Namespace) -> None:
-    load_portfolio(VIRTUAL_PORTFOLIOS_ROOT, args.name)
+    portfolio = load_portfolio(VIRTUAL_PORTFOLIOS_ROOT, args.name)
+    kind = args.type.upper()
+    if kind in {"SELL", "REDEMPTION"}:
+        positions = {str(x.get("secid") or ""): dict(x) for x in portfolio.get("positions", [])}
+        position = positions.get(str(args.secid or ""))
+        if position is None:
+            raise ValueError(f"Позиция не найдена: {args.secid}")
+        old_qty = int(position.get("quantity") or 0)
+        qty = old_qty if kind == "REDEMPTION" and args.quantity is None else int(args.quantity or 0)
+        if qty <= 0 or qty > old_qty:
+            raise ValueError(f"Некорректное количество: {qty}; в портфеле {old_qty}")
+        if qty == old_qty:
+            portfolio = remove_position(portfolio, args.secid)
+        else:
+            old_invested = float(position.get("invested") or 0)
+            position["quantity"] = old_qty - qty
+            position["invested"] = round(old_invested * (old_qty - qty) / old_qty, 2)
+            portfolio = upsert_position(portfolio, position)
+        save_portfolio(VIRTUAL_PORTFOLIOS_ROOT, portfolio)
+        args.quantity = qty
     row = append_transaction(
-        LEDGER_ROOT, args.name, args.type, amount=args.amount, secid=args.secid,
+        LEDGER_ROOT, args.name, kind, amount=args.amount, secid=args.secid,
         quantity=args.quantity, unit_cost=args.unit_cost, note=args.note,
     )
     print(json.dumps(row, ensure_ascii=False, indent=2))
