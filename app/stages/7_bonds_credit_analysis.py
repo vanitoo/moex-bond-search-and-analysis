@@ -10,6 +10,7 @@ from app.core.credit_engine import (
     rating_direction, row_match_score, safe_float,
 )
 from app.core.credit_sources import BankRefreshOptions, FinancialRefreshOptions
+from app.core.stage_io import load_stage_frame
 from app.core.credit_workflow import (
     FINANCIAL_TEMPLATE_COLUMNS, RATING_TEMPLATE_COLUMNS, REQUIRED_DEEP_COLUMNS,
     create_templates, find_latest_deep_file, load_deep, load_optional_table,
@@ -36,10 +37,13 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        source = args.input or find_latest_deep_file(Path.cwd())
+        stage_input = load_stage_frame(run_dir=Path.cwd(), module="deep_analysis", pattern="bond_deep_analysis_*.xlsx", sheet="Глубокий анализ", explicit=args.input)
+        source = args.input or Path(stage_input.source)
         result = run_credit_workflow(
             CreditWorkflowRequest(
                 source=source,
+                input_frame=stage_input.frame,
+                source_label=stage_input.source,
                 data_dir=args.data_dir,
                 output_dir=args.output_dir,
                 fetch_ratings=not args.no_fetch_ratings,
