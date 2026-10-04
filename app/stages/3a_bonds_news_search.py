@@ -18,6 +18,7 @@ import pandas as pd
 import requests
 
 from app.core.project_paths import PROJECT_ROOT
+from app.core.stage_io import load_stage_frame
 from moex_bond_search_and_analysis.http_client import browser_session, user_agent
 from moex_bond_search_and_analysis.logger import like_print_log
 from moex_bond_search_and_analysis.news import write_to_file
@@ -43,11 +44,11 @@ def latest_search_file(root: Path) -> Path:
     return max(files, key=lambda path: path.stat().st_mtime)
 
 
-def load_secids(source: Path) -> list[str]:
-    df = pd.read_excel(source, sheet_name="Результаты поиска")
+def load_secids(source: Path | pd.DataFrame) -> list[str]:
+    df = source.copy() if isinstance(source, pd.DataFrame) else pd.read_excel(source, sheet_name="Результаты поиска")
     column = "Код ценной бумаги"
     if column not in df.columns:
-        raise ValueError(f"В файле {source} отсутствует столбец '{column}'")
+        raise ValueError(f"Во входных данных отсутствует столбец '{column}'")
     secids = df[column].dropna().astype(str).str.strip().str.upper()
     secids = secids[secids.str.fullmatch(r"RU[A-Z0-9]{10}", na=False)]
     return secids.drop_duplicates().tolist()
@@ -149,9 +150,9 @@ def main() -> None:
         like_print_log.info("🔐 HTTPS: используется системное хранилище доверенных сертификатов ОС")
     like_print_log.info(f"🌍 HTTP User-Agent: {user_agent()}")
 
-    source = args.input or latest_search_file(Path.cwd())
-    like_print_log.info(f"📂 Загружаем данные из {source.name}...")
-    secids = load_secids(source)
+    stage_input = load_stage_frame(run_dir=Path.cwd(), module="market_search", pattern="bond_search_*.xlsx", sheet="Результаты поиска", explicit=args.input)
+    like_print_log.info(f"📂 Загружаем market_search из {stage_input.source}...")
+    secids = load_secids(stage_input.frame)
     like_print_log.info(f"✅ Найдено выпусков: {len(secids)}")
 
     company_mapping, unresolved_secids = fetch_company_mapping(secids)
