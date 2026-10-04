@@ -39,7 +39,7 @@ def test_load_deep_validates_stage_contract(tmp_path: Path):
 
 def test_credit_workflow_request_accepts_in_memory_stage_input():
     from app.core.credit_sources import BankRefreshOptions, FinancialRefreshOptions
-    frame = pd.DataFrame(columns=REQUIRED_DEEP_COLUMNS)
+    frame = pd.DataFrame(columns=sorted(REQUIRED_DEEP_COLUMNS))
     request = CreditWorkflowRequest(
         source=Path("sqlite-source"),
         data_dir=Path("data"),
