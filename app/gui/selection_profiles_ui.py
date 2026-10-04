@@ -4,6 +4,7 @@ from typing import Any
 
 import streamlit as st
 
+from app.core.configuration import module_defaults
 from app.core.selection_profiles import (
     PROFILE_FIELDS,
     apply_selection_profile,
@@ -51,6 +52,7 @@ def _checkbox(label: str, field: str, default: bool) -> bool:
 
 
 def search_criteria_editor(settings: dict[str, Any]) -> None:
+    defaults = module_defaults("market_search")
     st.markdown("**Профиль предварительного отбора**")
     st.caption(
         "Профиль задаёт только первый фильтр рынка. Новости, кредитный риск, рейтинг, ликвидность, "
@@ -80,34 +82,34 @@ def search_criteria_editor(settings: dict[str, Any]) -> None:
     left, right = st.columns(2)
     with left:
         settings["yield_more"] = _number_input(
-            "Доходность ОТ, %", "yield_more", float(settings.get("yield_more", 15)), 1.0
+            "Доходность ОТ, %", "yield_more", float(settings.get("yield_more", defaults["yield_more"])), 1.0
         )
         settings["price_more"] = _number_input(
-            "Цена ОТ, % от номинала", "price_more", float(settings.get("price_more", 70)), 1.0
+            "Цена ОТ, % от номинала", "price_more", float(settings.get("price_more", defaults["price_more"])), 1.0
         )
         settings["duration_more"] = _number_input(
-            "Дюрация ОТ, месяцев", "duration_more", float(settings.get("duration_more", 3)), 1.0, 0.0
+            "Дюрация ОТ, месяцев", "duration_more", float(settings.get("duration_more", defaults["duration_more"])), 1.0, 0.0
         )
         settings["volume_more"] = _number_input(
-            "Минимальный объём каждого из 15 дней, шт.", "volume_more", float(settings.get("volume_more", 2000)), 100.0, 0.0
+            "Минимальный объём каждого из 15 дней, шт.", "volume_more", float(settings.get("volume_more", defaults["volume_more"])), 100.0, 0.0
         )
     with right:
         settings["yield_less"] = _number_input(
-            "Доходность ДО, %", "yield_less", float(settings.get("yield_less", 40)), 1.0
+            "Доходность ДО, %", "yield_less", float(settings.get("yield_less", defaults["yield_less"])), 1.0
         )
         settings["price_less"] = _number_input(
-            "Цена ДО, % от номинала", "price_less", float(settings.get("price_less", 120)), 1.0
+            "Цена ДО, % от номинала", "price_less", float(settings.get("price_less", defaults["price_less"])), 1.0
         )
         settings["duration_less"] = _number_input(
-            "Дюрация ДО, месяцев", "duration_less", float(settings.get("duration_less", 18)), 1.0, 0.0
+            "Дюрация ДО, месяцев", "duration_less", float(settings.get("duration_less", defaults["duration_less"])), 1.0, 0.0
         )
         settings["bond_volume_more"] = _number_input(
-            "Совокупный объём за 15 дней, шт.", "bond_volume_more", float(settings.get("bond_volume_more", 60000)), 1000.0, 0.0
+            "Совокупный объём за 15 дней, шт.", "bond_volume_more", float(settings.get("bond_volume_more", defaults["bond_volume_more"])), 1000.0, 0.0
         )
     settings["require_known_coupons"] = _checkbox(
         "Только облигации с известными купонами до погашения",
         "require_known_coupons",
-        bool(settings.get("require_known_coupons", True)),
+        bool(settings.get("require_known_coupons", defaults["require_known_coupons"])),
     )
 
     errors: list[str] = []
