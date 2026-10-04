@@ -8,7 +8,7 @@ import pandas as pd
 
 from app.core.market_analysis import ofz_spread_adjustment, score_row, yes
 from app.core.pipeline_common import clean_secid_rows, merge_by_secid
-from app.core.stage_io import load_stage_frame
+from app.core.stage_io import load_stage_frame, publish_stage_frame
 from app.core.search_contract import SEARCH_REQUIRED_COLUMNS, missing_search_columns, normalize_search_columns
 
 REQUIRED = SEARCH_REQUIRED_COLUMNS
@@ -52,6 +52,7 @@ def main() -> None:
     df["Источник ликвидности"] = volume.source
     df["Источник спреда к ОФЗ"] = ofz.source
     df = df.sort_values(["Оценка, 0-100", "Доходность"], ascending=[False, False])
+    publish_stage_frame("analysis", df)
 
     out = Path(args.output_dir)
     out.mkdir(parents=True, exist_ok=True)
