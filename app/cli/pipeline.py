@@ -6,6 +6,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from app.core.configuration import is_enabled, load_config, module_config
 from app.core.master_dataset import build_master_dataset
 from app.core.project_paths import PROJECT_ROOT
 from app.core.process_runner import run_module
@@ -25,9 +26,6 @@ from app.core.pipeline_architecture import (
     BY_SCRIPT,
     append_event,
     collect_stage,
-    is_enabled,
-    load_config,
-    module_config,
     record_disabled,
     write_summaries,
 )
